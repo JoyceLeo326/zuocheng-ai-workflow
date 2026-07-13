@@ -50,7 +50,6 @@ http://localhost:4173
 ├── script.js
 ├── vercel.json
 ├── assets
-│   ├── og-cover.png
 │   ├── og-cover.jpg
 │   ├── og-cover.svg
 │   └── 做成-AI学习工作流.pdf
