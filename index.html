@@ -1,0 +1,538 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#F3F0E8">
+  <meta name="description" content="做成■，面向大学生真实任务的 AI 学习工作流。7 天跑通第一次交付，18 课建立稳定方法。">
+  <meta property="og:type" content="website">
+  <meta property="og:locale" content="zh_CN">
+  <meta property="og:site_name" content="做成■">
+  <meta property="og:title" content="做成■｜别再收藏工具，先做成一件事">
+  <meta property="og:description" content="从真实任务开始，把模糊待办压成能检查、能提交的结果。">
+  <meta property="og:url" content="https://zuocheng-ai-workflow.vercel.app/">
+  <meta property="og:image" content="https://zuocheng-ai-workflow.vercel.app/assets/og-cover.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="做成■｜别再收藏工具，先做成一件事">
+  <meta name="twitter:description" content="面向大学生真实任务的 AI 学习工作流。">
+  <meta name="twitter:image" content="https://zuocheng-ai-workflow.vercel.app/assets/og-cover.png">
+  <title>做成■｜别再收藏工具，先做成一件事</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%23171717'/%3E%3Crect x='20' y='20' width='24' height='24' fill='%23D7FF4F'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">跳到主要内容</a>
+  <div class="scroll-progress" aria-hidden="true"><span></span></div>
+
+  <header class="site-header" data-header>
+    <a class="brand" href="#top" aria-label="做成首页">
+      <span class="brand-word">做成</span><span class="brand-mark" aria-hidden="true">■</span>
+    </a>
+    <nav class="desktop-nav" aria-label="主要导航">
+      <a href="#path">7 天路径</a>
+      <a href="#workbench">第一课</a>
+      <a href="#materials">传播物料</a>
+      <a href="#launch">上线计划</a>
+    </nav>
+    <a class="nav-cta" href="#workbench">从第一课开始 <span>↘</span></a>
+    <button class="menu-button" type="button" aria-label="打开导航" aria-expanded="false" data-menu-button>
+      <span></span><span></span>
+    </button>
+  </header>
+
+  <div class="mobile-menu" data-mobile-menu hidden>
+    <a href="#path">7 天任务路径</a>
+    <a href="#workbench">第一课工作台</a>
+    <a href="#materials">传播物料</a>
+    <a href="#launch">14 天上线</a>
+    <a href="#measurement">增长与迭代</a>
+  </div>
+
+  <main id="main">
+    <section class="hero" id="top">
+      <div class="hero-grid" aria-hidden="true"></div>
+      <div class="hero-copy reveal">
+        <p class="hero-kicker"><span class="live-dot"></span> 面向大学生真实任务的 AI 学习工作流</p>
+        <h1><span class="hero-line-dark">别再收藏工具，</span><span class="hero-line-blue">先做成一件事。</span></h1>
+        <p class="hero-lead">不从模型参数讲起。从你下周要交的汇报、调研、答辩开始，把模糊任务压成能检查、能提交的结果。</p>
+        <div class="hero-actions">
+          <a class="button button-dark" href="#workbench">把 25 页资料做成 3 页汇报 <span>→</span></a>
+          <a class="text-link" href="#path">先看 7 天怎么走 <span>↓</span></a>
+          <a class="text-link" href="assets/做成-AI学习工作流.pdf" download>下载课程手册 <span>↓</span></a>
+        </div>
+        <div class="hero-footnote">
+          <span>每天 35 分钟</span>
+          <span>每课一个交付件</span>
+          <span>过程可核验</span>
+        </div>
+      </div>
+
+      <div class="hero-machine reveal" data-delay="120">
+        <div class="machine-head">
+          <span>任务完成器</span>
+          <span class="machine-status"><i></i> 就绪</span>
+        </div>
+        <div class="square-stage" aria-label="从待办方框到完成方块的任务转换">
+          <div class="square-input">
+            <span class="square-symbol empty-square">□</span>
+            <small>“做个课堂汇报”</small>
+          </div>
+          <div class="flow-line">
+            <span class="flow-dot"></span>
+            <span class="flow-label">拆解 · 取证 · 组装</span>
+          </div>
+          <div class="square-output">
+            <span class="square-symbol filled-square">■</span>
+            <small>3 页可讲汇报</small>
+          </div>
+        </div>
+        <div class="machine-task">
+          <div class="task-source">
+            <span class="file-corner"></span>
+            <strong>校园睡眠调研.pdf</strong>
+            <small>25 页 · 8,420 字 · 6 组数据</small>
+          </div>
+          <div class="task-arrow">→</div>
+          <div class="task-result">
+            <div class="mini-slide"><b>1</b><span></span><span></span></div>
+            <div class="mini-slide"><b>2</b><span></span><span></span></div>
+            <div class="mini-slide"><b>3</b><span></span><span></span></div>
+          </div>
+        </div>
+        <button class="machine-button" type="button" data-machine-button>
+          <span data-machine-label>运行一次任务</span>
+          <span class="button-square">□</span>
+        </button>
+      </div>
+    </section>
+
+    <section class="product-strip" aria-label="产品路径">
+      <div class="strip-intro reveal">
+        <span>一个产品，三种进入方式</span>
+        <strong>从第一次做成，到稳定做成。</strong>
+      </div>
+      <article class="strip-card reveal" data-delay="80">
+        <div class="strip-num">7</div>
+        <div><h2>天起步课</h2><p>带着一项真实任务，完整跑通一次。</p></div>
+        <span class="strip-tag">先见结果</span>
+      </article>
+      <article class="strip-card reveal" data-delay="140">
+        <div class="strip-num">18</div>
+        <div><h2>课系统课</h2><p>从提问、取证、表达，到复盘与复用。</p></div>
+        <span class="strip-tag">建立方法</span>
+      </article>
+      <article class="strip-card reveal" data-delay="200">
+        <div class="strip-num symbol-num">■</div>
+        <div><h2>学科任务包</h2><p>按论文、商赛、调研、答辩直接开工。</p></div>
+        <span class="strip-tag">直接交付</span>
+      </article>
+    </section>
+
+    <section class="problem section-pad" id="problem">
+      <div class="section-heading reveal">
+        <p class="eyebrow">不是缺工具，是缺一条做完的路</p>
+        <h2>收藏夹越来越满，<br>交付件还是空白。</h2>
+      </div>
+      <div class="problem-board reveal" data-delay="120">
+        <div class="problem-side problem-before">
+          <div class="board-label">卡住时</div>
+          <ul>
+            <li><span>14:05</span>搜索“最好用的 AI PPT”</li>
+            <li><span>14:26</span>注册第 6 个工具</li>
+            <li><span>15:10</span>在空白文档前重新搜教程</li>
+            <li><span>16:40</span>发现内容没有可靠出处</li>
+          </ul>
+          <div class="board-total">耗时 2 小时 35 分 <strong>仍未开工</strong></div>
+        </div>
+        <div class="board-convert" aria-hidden="true">
+          <span>把“学工具”</span><b>→</b><span>换成“过任务”</span>
+        </div>
+        <div class="problem-side problem-after">
+          <div class="board-label">做成时</div>
+          <ul>
+            <li><span>00:00</span>定义交付标准与听众</li>
+            <li><span>08:00</span>标记观点、数据和出处</li>
+            <li><span>22:00</span>组装 3 页叙事骨架</li>
+            <li><span>38:00</span>核验、删改、导出</li>
+          </ul>
+          <div class="board-total">耗时 38 分钟 <strong>得到 1 个可讲版本</strong></div>
+        </div>
+      </div>
+      <div class="principles">
+        <article class="principle reveal"><span>先定交付</span><p>先写“老师最后会看到什么”，再决定用哪个工具。</p></article>
+        <article class="principle reveal" data-delay="70"><span>过程留痕</span><p>每个结论保留来源、页码和修改记录，避免漂亮但不可靠。</p></article>
+        <article class="principle reveal" data-delay="140"><span>结果复用</span><p>把这次做成的结构沉淀为下一次能直接调用的任务卡。</p></article>
+      </div>
+    </section>
+
+    <section class="path section-pad dark-section" id="path">
+      <div class="section-heading section-heading-light reveal">
+        <p class="eyebrow">7 天起步课</p>
+        <h2>每天推进一格，<br>第 7 天交付。</h2>
+        <p>选择一天，查看当日输入、动作和完成标准。课程不以“看完”为结束，以“交出来”为结束。</p>
+      </div>
+
+      <div class="path-shell reveal" data-delay="100">
+        <div class="day-tabs" role="tablist" aria-label="7 天任务路径">
+          <button class="day-tab active" role="tab" aria-selected="true" data-day="0"><span>一</span><b>定任务</b><i>■</i></button>
+          <button class="day-tab" role="tab" aria-selected="false" data-day="1"><span>二</span><b>找依据</b><i>□</i></button>
+          <button class="day-tab" role="tab" aria-selected="false" data-day="2"><span>三</span><b>搭结构</b><i>□</i></button>
+          <button class="day-tab" role="tab" aria-selected="false" data-day="3"><span>四</span><b>出初稿</b><i>□</i></button>
+          <button class="day-tab" role="tab" aria-selected="false" data-day="4"><span>五</span><b>做核验</b><i>□</i></button>
+          <button class="day-tab" role="tab" aria-selected="false" data-day="5"><span>六</span><b>讲一次</b><i>□</i></button>
+          <button class="day-tab" role="tab" aria-selected="false" data-day="6"><span>七</span><b>交付</b><i>□</i></button>
+        </div>
+        <div class="day-panel" role="tabpanel" aria-live="polite">
+          <div class="day-panel-top">
+            <span class="day-badge" data-day-badge>第一天</span>
+            <p data-day-time>预计 35 分钟</p>
+          </div>
+          <div class="day-main">
+            <div>
+              <p class="panel-label">今天只解决一个问题</p>
+              <h3 data-day-title>把“做个汇报”改写成可验收的任务</h3>
+              <p class="day-desc" data-day-desc>确认听众、时长、页数和老师评分点。任务越具体，AI 的输出越不容易跑偏。</p>
+            </div>
+            <div class="day-output">
+              <span>今天带走</span>
+              <strong data-day-output>一张任务定义卡</strong>
+              <small data-day-proof>完成标准：其他人看卡片后，能复述你要交什么。</small>
+            </div>
+          </div>
+          <div class="day-steps" data-day-steps>
+            <div><b>1</b><span>写下原始任务</span></div>
+            <div><b>2</b><span>补齐四个约束</span></div>
+            <div><b>3</b><span>生成验收清单</span></div>
+          </div>
+          <button class="complete-day" type="button" data-complete-day><span>标记今天完成</span><b>□</b></button>
+        </div>
+        <div class="path-progress">
+          <span>我的起步进度</span>
+          <div class="progress-track"><i data-path-progress></i></div>
+          <strong data-path-count>1 / 7</strong>
+        </div>
+      </div>
+    </section>
+
+    <section class="workbench section-pad" id="workbench">
+      <div class="section-heading reveal">
+        <p class="eyebrow">第一课完整工作台</p>
+        <h2>25 页资料<br>→ 3 页课堂汇报</h2>
+        <p>任务：围绕“大学生睡眠质量”做一场 3 分钟课堂汇报。目标不是让 AI 替你下结论，而是把阅读、取证、结构和表达压进一条可检查的链路。</p>
+      </div>
+
+      <div class="workbench-app reveal" data-delay="120">
+        <div class="app-topbar">
+          <div class="app-dots"><span></span><span></span><span></span></div>
+          <strong>任务 / 校园睡眠调研</strong>
+          <span class="saved-state">已自动保存</span>
+        </div>
+        <div class="app-layout">
+          <aside class="app-sidebar">
+            <div class="sidebar-title">任务进度</div>
+            <button class="work-step active" type="button" data-work-step="0"><b>■</b><span>定义交付<small>3 分钟 · 3 页</small></span></button>
+            <button class="work-step" type="button" data-work-step="1"><b>□</b><span>标记证据<small>6 条依据</small></span></button>
+            <button class="work-step" type="button" data-work-step="2"><b>□</b><span>组织结构<small>问题—发现—建议</small></span></button>
+            <button class="work-step" type="button" data-work-step="3"><b>□</b><span>生成页面<small>3 页初稿</small></span></button>
+            <button class="work-step" type="button" data-work-step="4"><b>□</b><span>核验导出<small>来源与表达</small></span></button>
+            <div class="sidebar-help"><span>卡住了？</span><p>先回到任务定义，不要换工具。</p></div>
+          </aside>
+
+          <div class="app-center">
+            <div class="workspace-head">
+              <div><span data-work-kicker>交付定义</span><h3 data-work-title>这 3 页需要让同学记住什么？</h3></div>
+              <span class="step-count" data-work-count>一 / 五</span>
+            </div>
+
+            <div class="work-view active" data-work-view="0">
+              <div class="brief-grid">
+                <label>听众<input type="text" value="同班同学与课程老师" aria-label="听众"></label>
+                <label>演讲时长<input type="text" value="3 分钟" aria-label="演讲时长"></label>
+                <label>页面数量<input type="text" value="3 页" aria-label="页面数量"></label>
+                <label>核心动作<input type="text" value="理解现状并提出可执行建议" aria-label="核心动作"></label>
+              </div>
+              <div class="definition-card">
+                <span>一句话任务</span>
+                <p>用 3 页内容说明校园睡眠问题有多普遍、主要受什么影响，以及学生本周能做出的一个改变。</p>
+              </div>
+            </div>
+
+            <div class="work-view" data-work-view="1" hidden>
+              <div class="source-tabs" role="tablist">
+                <button class="source-tab active" type="button" data-source="report">调研报告</button>
+                <button class="source-tab" type="button" data-source="interview">访谈摘录</button>
+                <button class="source-tab" type="button" data-source="survey">问卷数据</button>
+              </div>
+              <div class="source-document" data-source-document>
+                <div class="doc-meta"><span>《大学生睡眠状况调研》</span><small>第 8–12 页</small></div>
+                <p>样本中，<mark>63.4% 的学生工作日睡眠不足 7 小时</mark>；晚间使用电子设备超过 2 小时的群体，次日主观疲劳评分显著更高。</p>
+                <p>受访者将“任务拖延”“临睡前刷短视频”“宿舍作息不同步”列为最常见的三个干扰因素。</p>
+                <button class="evidence-button" type="button" data-evidence-add>+ 加入证据卡</button>
+              </div>
+              <div class="evidence-stack"><span>已标记 5 / 6</span><div><i style="width:83%"></i></div></div>
+            </div>
+
+            <div class="work-view" data-work-view="2" hidden>
+              <div class="story-map">
+                <div class="story-node"><span>第一页 · 问题</span><strong>我们普遍睡得不够</strong><p>用 63.4% 建立共同感受，不堆背景。</p></div>
+                <div class="story-arrow">↓</div>
+                <div class="story-node"><span>第二页 · 发现</span><strong>不是不想睡，是晚间被不断切碎</strong><p>聚焦拖延、屏幕与宿舍节奏三项原因。</p></div>
+                <div class="story-arrow">↓</div>
+                <div class="story-node green-node"><span>第三页 · 建议</span><strong>从“固定下线时间”开始</strong><p>给出本周可执行的一步，而不是泛泛说早睡。</p></div>
+              </div>
+            </div>
+
+            <div class="work-view" data-work-view="3" hidden>
+              <div class="slide-canvas">
+                <div class="big-slide active" data-slide="0">
+                  <div class="slide-number">63.4%</div>
+                  <h4>每 10 名学生中，约 6 名工作日睡不够 7 小时</h4>
+                  <div class="slide-source">来源：校园睡眠调研，样本量 428</div>
+                </div>
+                <div class="big-slide" data-slide="1" hidden>
+                  <h4>睡眠被三件小事切碎</h4>
+                  <div class="factor-bars"><span style="--w:86%">任务拖延 <b>42%</b></span><span style="--w:68%">临睡刷屏 <b>34%</b></span><span style="--w:46%">作息不同 <b>23%</b></span></div>
+                  <div class="slide-source">多选题，显示提及率前三项</div>
+                </div>
+                <div class="big-slide" data-slide="2" hidden>
+                  <div class="action-square">■</div>
+                  <h4>今晚先做一件事：<br>设定固定的“屏幕下线时间”</h4>
+                  <p>连续 7 天记录上床时间与第二天精力。</p>
+                </div>
+              </div>
+              <div class="slide-thumbs">
+                <button class="slide-thumb active" type="button" data-slide-thumb="0"><span>63.4%</span><small>现状</small></button>
+                <button class="slide-thumb" type="button" data-slide-thumb="1"><span>≡</span><small>原因</small></button>
+                <button class="slide-thumb" type="button" data-slide-thumb="2"><span>■</span><small>行动</small></button>
+              </div>
+            </div>
+
+            <div class="work-view" data-work-view="4" hidden>
+              <div class="checklist">
+                <label><input type="checkbox" checked> 所有数字能回到原始页或问卷字段 <span>通过</span></label>
+                <label><input type="checkbox" checked> 标题表达结论，不只是写主题 <span>通过</span></label>
+                <label><input type="checkbox" checked> 3 分钟内可以完整讲完 <span>通过</span></label>
+                <label><input type="checkbox"> 删除无法解释的装饰图表 <span>待确认</span></label>
+              </div>
+              <div class="export-row"><div><strong>交付包已就绪</strong><p>3 页汇报 · 讲稿提纲 · 6 条来源索引</p></div><button type="button" data-export>导出交付包</button></div>
+            </div>
+
+            <div class="workspace-footer">
+              <button class="ghost-control" type="button" data-work-prev disabled>← 上一步</button>
+              <span class="work-hint" data-work-hint>先定义结果，避免边做边换方向。</span>
+              <button class="solid-control" type="button" data-work-next>保存并继续 →</button>
+            </div>
+          </div>
+
+          <aside class="app-proof">
+            <div class="proof-head"><span>依据抽屉</span><b>6</b></div>
+            <div class="proof-card"><small>数据</small><strong>63.4% 睡眠不足 7 小时</strong><span>报告第 9 页</span></div>
+            <div class="proof-card"><small>对比</small><strong>刷屏 ＞2h，疲劳评分更高</strong><span>报告第 11 页</span></div>
+            <div class="proof-card"><small>访谈</small><strong>“不是不困，是舍不得结束今天。”</strong><span>访谈 07</span></div>
+            <div class="proof-card muted-proof"><small>提醒</small><p>数据说明相关，不直接写成因果。</p></div>
+          </aside>
+        </div>
+      </div>
+    </section>
+
+    <section class="materials section-pad" id="materials">
+      <div class="section-heading reveal">
+        <p class="eyebrow">从课程到传播</p>
+        <h2>不是“介绍课程”，<br>是让任务自己说话。</h2>
+        <p>同一个产品主张，被翻译成海报、短视频和社群触点。每份物料对应一个具体场景与下一步动作。</p>
+      </div>
+
+      <div class="poster-grid">
+        <article class="poster poster-one reveal">
+          <div class="poster-brand">做成■</div>
+          <div class="poster-question">你收藏的<br>第 <strong>37</strong> 个 <span class="nowrap">AI 工具，</span><br>今天能替你交<br>哪份作业？</div>
+          <div class="poster-bottom"><span>7 天起步课</span><b>别再收藏工具，先做成一件事。</b></div>
+          <div class="poster-orbit" aria-hidden="true"><i></i><i></i><i></i></div>
+        </article>
+        <article class="poster poster-two reveal" data-delay="90">
+          <div class="poster-brand">做成■</div>
+          <div class="poster-equation"><span>25 页资料</span><b>→</b><span>3 页汇报</span></div>
+          <div class="poster-time"><strong>38</strong><span>分钟<br>做出可讲版本</span></div>
+          <div class="poster-checks"><span>■ 找到出处</span><span>■ 讲清结论</span><span>■ 留下模板</span></div>
+        </article>
+        <article class="poster poster-three reveal" data-delay="180">
+          <div class="poster-brand light-brand">做成<span>■</span></div>
+          <div class="poster-window">
+            <div class="window-bar"><i></i><i></i><i></i></div>
+            <div class="window-body"><span>□</span><b>课程汇报</b><small>等待开始</small></div>
+            <div class="window-body done"><span>■</span><b>三页交付包</b><small>今天 16:38</small></div>
+          </div>
+          <div class="poster-slogan">开学不重学工具。<br><strong>直接跑通任务。</strong></div>
+          <div class="poster-footer">18 课系统课 · 从提问到交付</div>
+        </article>
+      </div>
+
+      <div class="storyboard reveal">
+        <div class="material-title"><span>30 秒短视频</span><h3>“收藏夹很满，作业还是空白”</h3><button type="button" data-story-play>▶ 播放分镜</button></div>
+        <div class="story-progress"><i data-story-progress></i></div>
+        <div class="story-frames" data-story-frames>
+          <article class="story-frame active" data-frame="0"><div class="frame-time">0–3s</div><div class="phone-scene scroll-scene"><span>AI 工具合集</span><span>一键生成 PPT</span><span>论文神器</span><i>已收藏</i></div><h4>手指连续收藏工具</h4><p>字幕：收藏夹已经 237 条。</p></article>
+          <article class="story-frame" data-frame="1"><div class="frame-time">3–7s</div><div class="phone-scene blank-scene"><span></span><b>|</b></div><h4>切到空白文档</h4><p>旁白：但下周的汇报，还是一个字没写。</p></article>
+          <article class="story-frame" data-frame="2"><div class="frame-time">7–12s</div><div class="phone-scene task-scene"><small>输入</small><strong>25 页资料</strong><b>↓</b><small>目标</small><strong>3 页汇报</strong></div><h4>任务被压成一张卡</h4><p>字幕：先定义要交什么。</p></article>
+          <article class="story-frame" data-frame="3"><div class="frame-time">12–20s</div><div class="phone-scene proof-scene"><span>63.4%</span><i>来源 第 9 页</i><b>加入依据</b></div><h4>标记证据并保留出处</h4><p>旁白：AI 可以加速，结论必须能核验。</p></article>
+          <article class="story-frame" data-frame="4"><div class="frame-time">20–27s</div><div class="phone-scene result-scene"><i>1</i><i>2</i><i>3</i><span>■</span></div><h4>三页汇报依次完成</h4><p>字幕：问题、发现、建议。</p></article>
+          <article class="story-frame" data-frame="5"><div class="frame-time">27–30s</div><div class="phone-scene end-scene"><strong>做成■</strong><span>别再收藏工具<br>先做成一件事</span></div><h4>落版与行动</h4><p>按钮：带一项任务，7 天交出来。</p></article>
+        </div>
+      </div>
+
+      <div class="community reveal">
+        <div class="material-title"><span>社群触点</span><h3>每条消息只推动一个动作</h3></div>
+        <div class="copy-tabs" role="tablist">
+          <button class="copy-tab active" type="button" data-copy="0">入群欢迎</button>
+          <button class="copy-tab" type="button" data-copy="1">第三天催更</button>
+          <button class="copy-tab" type="button" data-copy="2">第七天晒单</button>
+        </div>
+        <div class="copy-card">
+          <div class="chat-avatar">■</div>
+          <div class="chat-bubble" data-copy-content>
+            <strong>先别自我介绍，发一张“你最想做完的任务”截图。</strong>
+            <p>论文选题、课堂汇报、商赛分析都可以。今晚 22:00 前完成任务卡，我们会帮你检查：听众、时长、格式、完成标准是否齐全。</p>
+            <span>今天只做一件事：把模糊待办改写成可交付任务。</span>
+          </div>
+          <button class="copy-button" type="button" data-copy-button>复制文案</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="launch section-pad dark-section" id="launch">
+      <div class="section-heading section-heading-light reveal">
+        <p class="eyebrow">14 天上线节奏</p>
+        <h2>先验证任务，<br>再放大流量。</h2>
+        <p>前 7 天确认“大家愿不愿意开始”，后 7 天确认“做完之后愿不愿意留下与分享”。</p>
+      </div>
+      <div class="calendar reveal" data-delay="100">
+        <div class="week-label"><span>第一周 · 找到高意向任务</span><b>验证开始率</b></div>
+        <div class="calendar-row">
+          <button class="calendar-day active" type="button" data-launch-day="0"><span>一</span><b>访谈</b><small>12 人</small></button>
+          <button class="calendar-day" type="button" data-launch-day="1"><span>二</span><b>切任务</b><small>3 类</small></button>
+          <button class="calendar-day" type="button" data-launch-day="2"><span>三</span><b>做落地页</b><small>A / B</small></button>
+          <button class="calendar-day" type="button" data-launch-day="3"><span>四</span><b>招募</b><small>30 人</small></button>
+          <button class="calendar-day" type="button" data-launch-day="4"><span>五</span><b>开营</b><small>任务卡</small></button>
+          <button class="calendar-day" type="button" data-launch-day="5"><span>六</span><b>陪跑</b><small>答疑</small></button>
+          <button class="calendar-day" type="button" data-launch-day="6"><span>日</span><b>复盘</b><small>开始率</small></button>
+        </div>
+        <div class="week-label second-week"><span>第二周 · 跑通第一次交付</span><b>验证完成率</b></div>
+        <div class="calendar-row">
+          <button class="calendar-day" type="button" data-launch-day="7"><span>一</span><b>改首课</b><small>减步骤</small></button>
+          <button class="calendar-day" type="button" data-launch-day="8"><span>二</span><b>上模板</b><small>3 套</small></button>
+          <button class="calendar-day" type="button" data-launch-day="9"><span>三</span><b>发挑战</b><small>48h</small></button>
+          <button class="calendar-day" type="button" data-launch-day="10"><span>四</span><b>晒过程</b><small>UGC</small></button>
+          <button class="calendar-day" type="button" data-launch-day="11"><span>五</span><b>收作业</b><small>核验</small></button>
+          <button class="calendar-day" type="button" data-launch-day="12"><span>六</span><b>做案例</b><small>3 份</small></button>
+          <button class="calendar-day" type="button" data-launch-day="13"><span>日</span><b>定扩量</b><small>继续 / 停</small></button>
+        </div>
+        <div class="calendar-detail" aria-live="polite">
+          <span data-launch-badge>第一天</span>
+          <h3 data-launch-title>先听 12 个真实任务，不急着讲课程</h3>
+          <p data-launch-desc>记录最近 14 天内必须提交的任务、卡住位置、现在的解决方式和愿意投入的时间。只收具体事件，不问泛泛的“你想学什么”。</p>
+          <div><b data-launch-output>产出：任务机会表</b><small data-launch-metric>判断：同一任务是否出现 ≥ 5 次</small></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="measurement section-pad" id="measurement">
+      <div class="section-heading reveal">
+        <p class="eyebrow">增长不是多发几条内容</p>
+        <h2>每一层流失，<br>都对应一个要改的问题。</h2>
+      </div>
+
+      <div class="experiment-switch reveal">
+        <div class="experiment-label"><span>14 天目标漏斗 · 每 10,000 次内容曝光</span><small>用于验证期测算，达成情况以埋点回收为准</small></div>
+        <div role="group" aria-label="落地页版本">
+          <button class="experiment-button active" type="button" data-exp="a">基准假设 · 讲工具</button>
+          <button class="experiment-button" type="button" data-exp="b">目标假设 · 讲任务</button>
+        </div>
+      </div>
+
+      <div class="funnel-layout reveal" data-delay="100">
+        <div class="funnel" data-funnel>
+          <div class="funnel-row" style="--funnel-width:100%"><span>看见内容</span><b data-funnel-value="0">10,000</b><i>100%</i></div>
+          <div class="funnel-row" style="--funnel-width:74%"><span>进入页面</span><b data-funnel-value="1">1,180</b><i>11.8%</i></div>
+          <div class="funnel-row" style="--funnel-width:55%"><span>领取任务卡</span><b data-funnel-value="2">366</b><i>31.0%</i></div>
+          <div class="funnel-row" style="--funnel-width:38%"><span>开始第一课</span><b data-funnel-value="3">201</b><i>54.9%</i></div>
+          <div class="funnel-row" style="--funnel-width:25%"><span>完成首次交付</span><b data-funnel-value="4">92</b><i>45.8%</i></div>
+          <div class="funnel-row green-funnel" style="--funnel-width:17%"><span>主动分享</span><b data-funnel-value="5">27</b><i>29.3%</i></div>
+        </div>
+        <div class="funnel-readout">
+          <p class="panel-label">本轮最大问题</p>
+          <h3 data-funnel-insight>大家点进来了，但还不知道第一步要做什么。</h3>
+          <div class="hypothesis"><span>下一步只改一个变量</span><strong data-funnel-test>把“领取课程大纲”改为“领取 25 页→3 页任务卡”</strong></div>
+          <div class="metric-pair"><span><small>页面→领取</small><b data-key-rate>31.0%</b></span><span><small>目标</small><b>≥ 38%</b></span></div>
+        </div>
+      </div>
+
+      <div class="feedback-loop reveal">
+        <div class="feedback-head"><span>反馈不是评价，是下一版输入</span><b>每周五更新</b></div>
+        <div class="feedback-grid">
+          <div class="feedback-quotes">
+            <button class="quote-chip active" type="button" data-feedback="0">“提示词太长，我不知道改哪里”</button>
+            <button class="quote-chip" type="button" data-feedback="1">“资料很多，但我不敢用 AI 总结”</button>
+            <button class="quote-chip" type="button" data-feedback="2">“做完一遍，下次还是要重来”</button>
+          </div>
+          <div class="feedback-change">
+            <div><span>原来的设计</span><p data-feedback-before>给一段 600 字通用提示词</p></div>
+            <b>→</b>
+            <div class="after-change"><span>下一版改动</span><p data-feedback-after>拆成 4 个可选字段，并在每个字段旁放真实输入</p></div>
+          </div>
+          <div class="feedback-proof"><span>验证信号</span><strong data-feedback-metric>任务卡填写完成率</strong><p data-feedback-target>目标：从 54% 提升到 70%</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="curriculum section-pad">
+      <div class="section-heading reveal">
+        <p class="eyebrow">18 课系统课</p>
+        <h2>学的不是 18 个工具，<br>是 6 次完整闭环。</h2>
+      </div>
+      <div class="curriculum-grid">
+        <article class="curriculum-card reveal"><span>□ → ■</span><h3>定义任务</h3><p>把模糊待办改成可验收的交付说明。</p><small>任务卡 · 评分表 · 边界清单</small></article>
+        <article class="curriculum-card reveal" data-delay="50"><span>⌕</span><h3>寻找依据</h3><p>搜、读、筛、记，让每个判断都能回到出处。</p><small>来源表 · 证据卡 · 引用索引</small></article>
+        <article class="curriculum-card reveal" data-delay="100"><span>↳</span><h3>组织结构</h3><p>用听众的问题排列内容，而不是堆信息。</p><small>叙事图 · 页面骨架 · 讲述顺序</small></article>
+        <article class="curriculum-card reveal" data-delay="150"><span>✦</span><h3>生成初稿</h3><p>让 AI 在清晰约束内提速，人保留关键判断。</p><small>初稿 · 备选表达 · 视觉说明</small></article>
+        <article class="curriculum-card reveal" data-delay="200"><span>✓</span><h3>核验表达</h3><p>检查事实、逻辑、语气和时间，不把流畅当正确。</p><small>核验表 · 修改记录 · 演练卡</small></article>
+        <article class="curriculum-card green-curriculum reveal" data-delay="250"><span>■ × n</span><h3>沉淀复用</h3><p>把完成路径封装成下一次能直接调用的工作流。</p><small>任务模板 · 复盘卡 · 个人方法库</small></article>
+      </div>
+    </section>
+
+    <section class="faq section-pad" id="faq">
+      <div class="section-heading reveal">
+        <p class="eyebrow">常见问题</p>
+        <h2>开始之前，<br>把顾虑讲清楚。</h2>
+      </div>
+      <div class="faq-list reveal" data-delay="100">
+        <details open><summary>完全没用过 AI，也能从第一天开始吗？<span>＋</span></summary><p>可以。第一天不要求掌握任何模型，只需要带来一项两周内必须提交的任务。课程会从定义交付与判断标准开始，再逐步引入工具。</p></details>
+        <details><summary>会不会教很多容易过时的工具操作？<span>＋</span></summary><p>工具只在任务节点出现，且每个节点都提供替代选项。真正保留下来的是定义、取证、结构、核验和复用五种能力。</p></details>
+        <details><summary>AI 生成的内容不可靠怎么办？<span>＋</span></summary><p>工作流要求结论与来源绑定，并在交付前完成事实、逻辑和表达三层核验。没有依据的内容不能进入最终版本。</p></details>
+        <details><summary>7 天课和 18 课系统课应该选哪个？<span>＋</span></summary><p>如果手上正好有一个真实任务，先用 7 天跑通。完成后希望把方法迁移到论文、商赛与答辩，再进入 18 课系统课。</p></details>
+        <details><summary>学科任务包里有什么？<span>＋</span></summary><p>包含该任务的输入清单、步骤卡、提示结构、核验表和交付模板。首批覆盖课堂汇报、文献综述、用户调研、商赛分析与答辩准备。</p></details>
+      </div>
+    </section>
+
+    <section class="final-cta">
+      <div class="cta-noise" aria-hidden="true"></div>
+      <div class="final-symbol" aria-hidden="true"><span>□</span><i>→</i><b>■</b></div>
+      <h2>下一项任务，<br>别只停在“等会儿做”。</h2>
+      <p>带着一份真实资料进入第一课，今天先完成任务定义卡。</p>
+      <a class="button button-green" href="#workbench">现在开始第一课 <span>↗</span></a>
+      <div class="final-note"><span>无需先学工具</span><span>35 分钟完成第一步</span><span>结果可带走</span></div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <a class="brand footer-brand" href="#top"><span class="brand-word">做成</span><span class="brand-mark">■</span></a>
+    <p>让 AI 学习从“知道”走到“交付”。</p>
+    <div><a href="#path">7 天起步课</a><a href="#workbench">第一课</a><a href="assets/做成-AI学习工作流.pdf" download>课程手册</a><a href="#faq">常见问题</a></div>
+    <span>从 □ 到 ■，一次只做成一件事。</span>
+  </footer>
+
+  <div class="toast" role="status" aria-live="polite" data-toast>已复制</div>
+  <script src="script.js"></script>
+</body>
+</html>
