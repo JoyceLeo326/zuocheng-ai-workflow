@@ -14,6 +14,9 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
 
       - name: Fetch the verified production artifact
         shell: bash
@@ -135,6 +138,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git pull --rebase origin main
           git add .gitignore README.md index.html styles.css script.js vercel.json assets docs
           git diff --cached --quiet || git commit -m "Launch 做成 AI learning workflow"
           git push origin HEAD:main
