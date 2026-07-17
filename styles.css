@@ -178,6 +178,37 @@ button { color: inherit; }
 
 .hero-copy, .hero-machine { position: relative; z-index: 1; }
 
+.authenticity-notice {
+  max-width: 650px;
+  margin: 0 0 30px;
+  padding: 16px 18px;
+  border: 2px solid var(--ink);
+  border-left: 8px solid var(--blue);
+  background: var(--green);
+  box-shadow: 6px 6px 0 var(--ink);
+}
+
+.authenticity-notice .authenticity-status {
+  margin: 0 0 4px;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.authenticity-notice h2 {
+  margin: 0;
+  font-size: 19px;
+  line-height: 1.25;
+}
+
+.authenticity-notice p:last-child {
+  margin: 8px 0 0;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
 .hero-kicker, .eyebrow {
   margin: 0 0 24px;
   font-family: var(--mono);
