@@ -73,13 +73,62 @@ export const UriReferenceSchema = z
   .max(2_048)
   .regex(URI_REFERENCE_PATTERN, 'Expected an RFC 3986 URI reference');
 
-export const ProblemDetailsSchema = z.strictObject({
+export const ProblemCodeSchema = z
+  .string()
+  .min(1)
+  .max(100)
+  .regex(
+    /^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*$/,
+    'Problem code must be an uppercase machine-readable identifier',
+  );
+
+export const FieldErrorSchema = z.strictObject({
+  path: z
+    .array(z.union([z.string().min(1), z.number().int().nonnegative()]))
+    .min(1)
+    .max(32)
+    .describe('Path segments from the request root to the invalid field'),
+  code: ProblemCodeSchema,
+  message: z
+    .string()
+    .min(1)
+    .max(2_048)
+    .describe('Safe, user-facing explanation for this field failure'),
+});
+
+export type FieldError = z.infer<typeof FieldErrorSchema>;
+
+const ProblemDetailsShape = {
   type: UriReferenceSchema,
   title: z.string().min(1),
   status: z.number().int().min(400).max(599),
-  detail: z.string().min(1).optional(),
-  instance: UriReferenceSchema.optional(),
-});
+  code: ProblemCodeSchema,
+  message: z
+    .string()
+    .min(1)
+    .max(4_096)
+    .describe('Safe, user-facing explanation; never a stack trace'),
+  requestId: UUIDv7Schema,
+  retryable: z
+    .boolean()
+    .describe('Whether the same operation may be retried without user changes'),
+  fieldErrors: z
+    .array(FieldErrorSchema)
+    .min(1)
+    .max(100)
+    .optional()
+    .describe('Present only when one or more request fields are invalid'),
+  detail: z
+    .string()
+    .min(1)
+    .optional()
+    .describe('Optional occurrence-specific detail beyond the stable message'),
+  instance: UriReferenceSchema.optional().describe(
+    'Optional URI reference identifying this specific problem occurrence',
+  ),
+} as const;
+
+export const ProblemDetailsSchema = z.strictObject(ProblemDetailsShape);
 
 export type ProblemDetails = z.infer<typeof ProblemDetailsSchema>;
 
@@ -89,16 +138,21 @@ export const VERSION_CONFLICT_TYPE =
 
 export const VersionConflictProblemSchema = z
   .strictObject({
+    ...ProblemDetailsShape,
     type: z.literal(VERSION_CONFLICT_TYPE),
     title: z.literal('Version conflict'),
     status: z.literal(409),
-    detail: z.string().min(1),
-    instance: UriReferenceSchema.optional(),
     code: z.literal(VERSION_CONFLICT),
-    resourceId: ResourceIdSchema,
+    retryable: z.literal(false),
+    resource: TenantResourceSchema,
     expectedVersion: ResourceVersionSchema,
     currentVersion: ResourceVersionSchema,
     currentETag: ETagSchema,
+    current: z
+      .record(z.string(), z.unknown())
+      .refine((snapshot) => Object.keys(snapshot).length > 0, {
+        message: 'Current resource snapshot must not be empty',
+      }),
   })
   .superRefine((problem, context) => {
     if (problem.currentETag !== formatETag(problem.currentVersion)) {
@@ -107,6 +161,23 @@ export const VersionConflictProblemSchema = z
         message: 'Current ETag must represent the current resource version',
         path: ['currentETag'],
       });
+    }
+
+    const snapshotChecks = [
+      ['tenantId', problem.resource.tenantId],
+      ['id', problem.resource.id],
+      ['version', problem.currentVersion],
+      ['etag', problem.currentETag],
+    ] as const;
+
+    for (const [field, expected] of snapshotChecks) {
+      if (problem.current[field] !== expected) {
+        context.addIssue({
+          code: 'custom',
+          message: `Current snapshot ${field} must match the conflict metadata`,
+          path: ['current', field],
+        });
+      }
     }
   });
 
