@@ -1,5 +1,146 @@
 import { z } from 'zod';
 
+export const UUIDv7Schema = z.uuidv7();
+
+export type UUIDv7 = z.infer<typeof UUIDv7Schema>;
+
+export const TenantIdSchema = UUIDv7Schema;
+export const ResourceIdSchema = UUIDv7Schema;
+
+export type TenantId = z.infer<typeof TenantIdSchema>;
+export type ResourceId = z.infer<typeof ResourceIdSchema>;
+
+export const ResourceVersionSchema = z
+  .number()
+  .int()
+  .min(1)
+  .max(Number.MAX_SAFE_INTEGER);
+
+export type ResourceVersion = z.infer<typeof ResourceVersionSchema>;
+
+const ETAG_PATTERN = /^"([1-9]\d*)"$/;
+
+export const ETagSchema = z
+  .string()
+  .regex(ETAG_PATTERN, 'ETag must use the canonical strong form "{version}"')
+  .refine((value) => {
+    const version = ETAG_PATTERN.exec(value)?.[1];
+
+    return (
+      version !== undefined &&
+      Number.isSafeInteger(Number(version)) &&
+      Number(version) >= 1
+    );
+  }, 'ETag version must be a positive safe integer');
+
+export type ETag = z.infer<typeof ETagSchema>;
+
+export function formatETag(version: ResourceVersion): ETag {
+  return ETagSchema.parse(`"${ResourceVersionSchema.parse(version)}"`);
+}
+
+export const TenantResourceSchema = z.strictObject({
+  tenantId: TenantIdSchema,
+  id: ResourceIdSchema,
+});
+
+export type TenantResource = z.infer<typeof TenantResourceSchema>;
+
+export const VersionedResourceSchema = z
+  .strictObject({
+    tenantId: TenantIdSchema,
+    id: ResourceIdSchema,
+    version: ResourceVersionSchema,
+    etag: ETagSchema,
+  })
+  .superRefine((resource, context) => {
+    if (resource.etag !== formatETag(resource.version)) {
+      context.addIssue({
+        code: 'custom',
+        message: 'ETag must represent the resource version',
+        path: ['etag'],
+      });
+    }
+  });
+
+export type VersionedResource = z.infer<typeof VersionedResourceSchema>;
+
+const URI_REFERENCE_PATTERN = /^[^\u0000-\u0020\u007f]+$/;
+
+export const UriReferenceSchema = z
+  .string()
+  .min(1)
+  .max(2_048)
+  .regex(URI_REFERENCE_PATTERN, 'Expected an RFC 3986 URI reference');
+
+export const ProblemDetailsSchema = z.strictObject({
+  type: UriReferenceSchema,
+  title: z.string().min(1),
+  status: z.number().int().min(400).max(599),
+  detail: z.string().min(1).optional(),
+  instance: UriReferenceSchema.optional(),
+});
+
+export type ProblemDetails = z.infer<typeof ProblemDetailsSchema>;
+
+export const VERSION_CONFLICT = 'VERSION_CONFLICT' as const;
+export const VERSION_CONFLICT_TYPE =
+  'https://zuocheng.app/problems/version-conflict' as const;
+
+export const VersionConflictProblemSchema = z
+  .strictObject({
+    type: z.literal(VERSION_CONFLICT_TYPE),
+    title: z.literal('Version conflict'),
+    status: z.literal(409),
+    detail: z.string().min(1),
+    instance: UriReferenceSchema.optional(),
+    code: z.literal(VERSION_CONFLICT),
+    resourceId: ResourceIdSchema,
+    expectedVersion: ResourceVersionSchema,
+    currentVersion: ResourceVersionSchema,
+    currentETag: ETagSchema,
+  })
+  .superRefine((problem, context) => {
+    if (problem.currentETag !== formatETag(problem.currentVersion)) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Current ETag must represent the current resource version',
+        path: ['currentETag'],
+      });
+    }
+  });
+
+export type VersionConflictProblem = z.infer<
+  typeof VersionConflictProblemSchema
+>;
+
+export const IdempotencyKeySchema = z
+  .string()
+  .regex(
+    /^[A-Za-z0-9._:-]{8,128}$/,
+    'Idempotency key must contain 8-128 URL-safe printable characters',
+  );
+
+export type IdempotencyKey = z.infer<typeof IdempotencyKeySchema>;
+
+export const ProjectStatusSchema = z.enum(['active', 'archived']);
+export const DeletionStatusSchema = z.enum([
+  'active',
+  'soft_deleted',
+  'purge_pending',
+  'purged',
+]);
+
+export type ProjectStatus = z.infer<typeof ProjectStatusSchema>;
+export type DeletionStatus = z.infer<typeof DeletionStatusSchema>;
+
+export const ProjectStateSchema = z.strictObject({
+  status: ProjectStatusSchema,
+  deletionStatus: DeletionStatusSchema,
+});
+
+export type ProjectState = z.infer<typeof ProjectStateSchema>;
+
 export const DeploymentModeSchema = z.enum([
   'local',
   'hosted-beta',
@@ -8,7 +149,7 @@ export const DeploymentModeSchema = z.enum([
 
 export type DeploymentMode = z.infer<typeof DeploymentModeSchema>;
 
-export const RuntimeCostPolicySchema = z.object({
+export const RuntimeCostPolicySchema = z.strictObject({
   COST_MODE: z.literal('zero_owner_cost'),
   OWNER_BILLING_MODE: z.literal('deny'),
   ALLOW_OWNER_BILLED_PROVIDER: z.literal(false),
@@ -36,7 +177,7 @@ export const ZERO_OWNER_COST_POLICY: RuntimeCostPolicy = Object.freeze({
   TENANT_CONTEXT_REQUIRED: true,
 });
 
-export const HealthStatusSchema = z.object({
+export const HealthStatusSchema = z.strictObject({
   service: z.string().min(1),
   status: z.enum(['ok', 'degraded']),
   deploymentMode: DeploymentModeSchema,
@@ -45,4 +186,3 @@ export const HealthStatusSchema = z.object({
 });
 
 export type HealthStatus = z.infer<typeof HealthStatusSchema>;
-
