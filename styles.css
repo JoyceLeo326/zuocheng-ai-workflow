@@ -207,6 +207,18 @@ button { color: inherit; }
 .local-rule-note b { color: var(--green); font-family: var(--mono); font-size: 10px; letter-spacing: .08em; }
 .local-rule-note p { margin: 9px 0 0; color: rgba(255,255,255,.78); font-size: 11px; line-height: 1.65; }
 
+.cost-boundary { padding: 20px 28px; border-bottom: 2px solid var(--ink); background: var(--green); }
+.cost-boundary-title { display: flex; justify-content: space-between; align-items: baseline; gap: 20px; }
+.cost-boundary-title span { font-family: var(--mono); font-size: 9px; font-weight: 850; letter-spacing: .08em; text-transform: uppercase; }
+.cost-boundary-title strong { font-size: 16px; }
+.cost-boundary-facts { display: grid; grid-template-columns: repeat(4, 1fr); margin-top: 14px; border: 1px solid var(--ink); background: var(--paper-light); }
+.cost-boundary-facts > span { min-width: 0; padding: 11px 13px; border-right: 1px solid var(--ink); }
+.cost-boundary-facts > span:last-child { border-right: 0; }
+.cost-boundary-facts small, .cost-boundary-facts b { display: block; }
+.cost-boundary-facts small { color: var(--muted); font-family: var(--mono); font-size: 7px; }
+.cost-boundary-facts b { margin-top: 4px; font-size: 9px; line-height: 1.4; }
+.cost-boundary > p { margin: 11px 0 0; font-size: 9px; line-height: 1.55; }
+
 .launchpad-grid { display: grid; grid-template-columns: minmax(280px, .75fr) minmax(0, 1.25fr); }
 .task-form { padding: 28px; border-right: 1px solid var(--ink); background: var(--paper); }
 .task-form-head { margin-bottom: 22px; padding-bottom: 18px; border-bottom: 1px solid var(--line); }
@@ -753,6 +765,11 @@ button { color: inherit; }
   .hero { min-height: 0; padding: 130px 20px 90px; gap: 70px; }
   .launchpad-head { grid-template-columns: 1fr; gap: 22px; padding: 25px 20px; }
   .launchpad-head h1 { font-size: clamp(43px, 12vw, 58px); }
+  .cost-boundary { padding: 18px; }
+  .cost-boundary-title { align-items: flex-start; flex-direction: column; gap: 5px; }
+  .cost-boundary-facts { grid-template-columns: repeat(2, 1fr); }
+  .cost-boundary-facts > span:nth-child(2) { border-right: 0; }
+  .cost-boundary-facts > span:nth-child(-n+2) { border-bottom: 1px solid var(--ink); }
   .launchpad-grid { grid-template-columns: 1fr; }
   .task-form { padding: 22px 18px; border-right: 0; border-bottom: 1px solid var(--ink); }
   .task-plan-panel { padding: 22px 16px; }
@@ -836,6 +853,9 @@ button { color: inherit; }
 
 @media (max-width: 420px) {
   .task-form-row { grid-template-columns: 1fr; }
+  .cost-boundary-facts { grid-template-columns: 1fr; }
+  .cost-boundary-facts > span, .cost-boundary-facts > span:nth-child(2) { border-right: 0; border-bottom: 1px solid var(--ink); }
+  .cost-boundary-facts > span:last-child { border-bottom: 0; }
   .task-plan-head { align-items: start; }
   .task-plan-actions { grid-template-columns: 1fr; }
   .task-plan-actions small { grid-column: 1; }

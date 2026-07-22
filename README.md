@@ -10,6 +10,10 @@
 
 本仓库是个人作品案例与教学演示，不是已上线运营产品的业绩报告。站内问卷、访谈、反馈、招募人数、完成率与增长漏斗等数字均为方案设计、界面占位或验证目标，用于说明方法与产品逻辑；不代表真实用户数据、已完成招募、已开展访谈或既有运营成绩。
 
+## 成本策略
+
+项目默认运行在 `COST_MODE=zero_owner_cost`：核心能力全部在浏览器本地完成，不连接远程 Provider，不启用自动账单。页面中的成本状态只陈述“本地 0 成本 / 远程用量不适用”，不展示虚构的真实用量或节省数据。完整的 Provider 拒绝、额度耗尽和托管边界见[零所有者成本运行策略](docs/zero-owner-cost.md)。
+
 ## 产品结构
 
 - **7 天起步课**：带着一项真实任务，每天推进一个关键节点，第 7 天形成可提交结果。
@@ -47,7 +51,7 @@ http://localhost:4173
 
 ## Vercel 部署
 
-仓库导入 Vercel 后无需选择框架，也无需填写构建命令：
+Vercel 部署只适用于个人非商业作品演示，并应使用不带付费附加项的 Hobby 配置。仓库导入 Vercel 后无需选择框架，也无需填写构建命令：
 
 - Framework Preset：Other
 - Build Command：留空
@@ -60,6 +64,8 @@ http://localhost:4173
 
 ```text
 .
+├── .env.example
+├── cost-policy.js
 ├── index.html
 ├── planner.js
 ├── styles.css
@@ -67,7 +73,8 @@ http://localhost:4173
 ├── vercel.json
 ├── qa
 │   ├── verify-authenticity.mjs
-│   └── verify-product-depth.mjs
+│   ├── verify-product-depth.mjs
+│   └── verify-zero-owner-cost.mjs
 ├── assets
 │   ├── og-cover.jpg
 │   ├── og-cover.svg
@@ -76,7 +83,8 @@ http://localhost:4173
     ├── product-architecture.md
     ├── content-system.md
     ├── launch-playbook.md
-    └── measurement.md
+    ├── measurement.md
+    └── zero-owner-cost.md
 ```
 
 ## 设计与交互
@@ -93,6 +101,7 @@ http://localhost:4173
 - [内容系统](docs/content-system.md)
 - [14 天上线手册](docs/launch-playbook.md)
 - [指标与实验](docs/measurement.md)
+- [零所有者成本运行策略](docs/zero-owner-cost.md)
 
 ## 发布前检查
 
