@@ -12,11 +12,15 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:pg17": "node qa/postgres17.mjs"
+  },
+  "dependencies": {
+    "drizzle-orm": "0.45.2"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "0.5.4",
     "typescript": "5.9.3",
     "vitest": "4.1.10"
   }
 }
-

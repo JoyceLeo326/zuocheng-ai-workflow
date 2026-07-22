@@ -36,4 +36,22 @@ describe('runtime environment', () => {
       parseRuntimeEnvironment({ OPENAI_API_KEY: 'owner-secret' }),
     ).toThrow(/forbidden/u);
   });
+
+  it('preserves an explicit customer runtime adapter module for API composition', () => {
+    expect(
+      parseRuntimeEnvironment({
+        DEPLOYMENT_MODE: 'tenant-managed-production',
+        TENANT_RUNTIME_ADAPTER_MODULE: '@customer/zuocheng-runtime',
+      }),
+    ).toMatchObject({
+      DEPLOYMENT_MODE: 'tenant-managed-production',
+      TENANT_RUNTIME_ADAPTER_MODULE: '@customer/zuocheng-runtime',
+    });
+  });
+
+  it('rejects an empty customer runtime adapter module', () => {
+    expect(() =>
+      parseRuntimeEnvironment({ TENANT_RUNTIME_ADAPTER_MODULE: '   ' }),
+    ).toThrow();
+  });
 });
