@@ -5,9 +5,10 @@ import { fileURLToPath } from "node:url";
 
 const qaDir = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(qaDir, "..");
-const indexPath = path.join(rootDir, "index.html");
+const marketingDir = path.join(rootDir, "apps", "marketing");
+const indexPath = path.join(marketingDir, "index.html");
 const readmePath = path.join(rootDir, "README.md");
-const scriptPath = path.join(rootDir, "script.js");
+const scriptPath = path.join(marketingDir, "script.js");
 
 const indexHtml = readFileSync(indexPath, "utf8");
 const readme = readFileSync(readmePath, "utf8");
@@ -74,9 +75,9 @@ const localReferences = [...indexHtml.matchAll(/\b(?:src|href)\s*=\s*["']([^"']+
 
 for (const reference of new Set(localReferences)) {
   const cleanReference = decodeURIComponent(reference.split(/[?#]/, 1)[0]);
-  const localPath = path.resolve(rootDir, cleanReference.replace(/^[/\\]+/, ""));
+  const localPath = path.resolve(marketingDir, cleanReference.replace(/^[/\\]+/, ""));
   assert.ok(
-    localPath === rootDir || localPath.startsWith(`${rootDir}${path.sep}`),
+    localPath === marketingDir || localPath.startsWith(`${marketingDir}${path.sep}`),
     `本地资源引用不可越出项目目录：${reference}`,
   );
   assert.ok(existsSync(localPath), `index.html 引用的本地文件不存在：${reference}`);

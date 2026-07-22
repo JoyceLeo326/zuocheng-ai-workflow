@@ -1,0 +1,42 @@
+:root {
+  color: #111111;
+  background: #f4f0e6;
+  font-family: Inter, "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+
+body {
+  margin: 0;
+}
+
+main {
+  box-sizing: border-box;
+  min-height: 100vh;
+  padding: clamp(2rem, 8vw, 7rem);
+}
+
+.eyebrow {
+  display: inline-block;
+  padding: 0.4rem 0.7rem;
+  color: #111111;
+  background: #c7ff3d;
+  font-weight: 800;
+}
+
+h1 {
+  max-width: 13ch;
+  font-size: clamp(2.4rem, 7vw, 6rem);
+  line-height: 1;
+}
+
+p {
+  max-width: 68ch;
+  line-height: 1.7;
+}
+
+section {
+  max-width: 52rem;
+  margin-top: 2rem;
+  padding: 1.5rem;
+  border: 2px solid #111111;
+  box-shadow: 8px 8px 0 #c7ff3d;
+}

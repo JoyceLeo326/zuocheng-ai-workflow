@@ -1,3 +1,13 @@
 .DS_Store
-qa/
+node_modules/
+.pnpm-store/
+dist/
+coverage/
+.vite/
+playwright-report/
+test-results/
+.env
+.env.*
+!.env.example
+!deploy/.env.production.example
 

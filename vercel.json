@@ -1,6 +1,9 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "pnpm --filter @zuocheng/marketing build",
   "cleanUrls": true,
+  "installCommand": "pnpm install --frozen-lockfile",
+  "outputDirectory": "apps/marketing/dist",
   "trailingSlash": false,
   "headers": [
     {

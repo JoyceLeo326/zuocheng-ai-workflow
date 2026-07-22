@@ -7,12 +7,13 @@ import { fileURLToPath } from "node:url";
 
 const qaDir = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(qaDir, "..");
+const marketingDir = path.join(rootDir, "apps", "marketing");
 const require = createRequire(import.meta.url);
-const indexHtml = readFileSync(path.join(rootDir, "index.html"), "utf8");
-const script = readFileSync(path.join(rootDir, "script.js"), "utf8");
+const indexHtml = readFileSync(path.join(marketingDir, "index.html"), "utf8");
+const script = readFileSync(path.join(marketingDir, "script.js"), "utf8");
 const readme = readFileSync(path.join(rootDir, "README.md"), "utf8");
 const envPath = path.join(rootDir, ".env.example");
-const policyPath = path.join(rootDir, "cost-policy.js");
+const policyPath = path.join(marketingDir, "cost-policy.js");
 const docsPath = path.join(rootDir, "docs", "zero-owner-cost.md");
 
 test("zero owner cost is the real default configuration", () => {
