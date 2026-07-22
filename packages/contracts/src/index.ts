@@ -65,13 +65,22 @@ export const VersionedResourceSchema = z
 
 export type VersionedResource = z.infer<typeof VersionedResourceSchema>;
 
-const URI_REFERENCE_PATTERN = /^[^\u0000-\u0020\u007f]+$/;
+const isSafeUriReference = (value: string): boolean => {
+  for (let index = 0; index < value.length; index += 1) {
+    const codeUnit = value.charCodeAt(index);
+    if (codeUnit <= 0x20 || codeUnit === 0x7f) {
+      return false;
+    }
+  }
+
+  return true;
+};
 
 export const UriReferenceSchema = z
   .string()
   .min(1)
   .max(2_048)
-  .regex(URI_REFERENCE_PATTERN, 'Expected an RFC 3986 URI reference');
+  .refine(isSafeUriReference, 'Expected an RFC 3986 URI reference');
 
 export const ProblemCodeSchema = z
   .string()
