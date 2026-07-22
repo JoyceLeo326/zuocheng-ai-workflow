@@ -103,11 +103,15 @@ describe('tenant resource identity and optimistic concurrency contracts', () => 
 });
 
 describe('problem detail contracts', () => {
-  it('accepts a strict RFC 7807 problem detail object', () => {
+  it('requires the common safe error envelope and rejects unknown fields', () => {
     const problem = {
       type: 'https://zuocheng.example/problems/not-found',
       title: 'Resource not found',
       status: 404,
+      code: 'RESOURCE_NOT_FOUND',
+      message: 'The requested project does not exist.',
+      requestId: '01890f3e-b6e8-7e93-b9c4-809fb49d75c1',
+      retryable: false,
       detail: 'The requested project does not exist.',
       instance: '/requests/request-123',
     };
@@ -116,6 +120,50 @@ describe('problem detail contracts', () => {
     expect(() =>
       ProblemDetailsSchema.parse({ ...problem, debug: 'must not leak' }),
     ).toThrow();
+
+    for (const requiredField of [
+      'type',
+      'title',
+      'status',
+      'code',
+      'message',
+      'requestId',
+      'retryable',
+    ] as const) {
+      const incomplete = { ...problem };
+      delete incomplete[requiredField];
+      expect(() => ProblemDetailsSchema.parse(incomplete)).toThrow();
+    }
+  });
+
+  it('accepts only non-empty, structured fieldErrors when field failures exist', () => {
+    const problem = {
+      type: 'https://zuocheng.example/problems/validation-failed',
+      title: 'Validation failed',
+      status: 422,
+      code: 'VALIDATION_FAILED',
+      message: 'One or more fields are invalid.',
+      requestId: '01890f3e-b6e8-7e93-b9c4-809fb49d75c1',
+      retryable: false,
+      fieldErrors: [
+        {
+          path: ['profile', 'displayName'],
+          code: 'TOO_SHORT',
+          message: 'Display name must contain at least two characters.',
+        },
+      ],
+    };
+
+    expect(ProblemDetailsSchema.parse(problem)).toEqual(problem);
+    expect(() =>
+      ProblemDetailsSchema.parse({ ...problem, fieldErrors: [] }),
+    ).toThrow();
+    expect(() =>
+      ProblemDetailsSchema.parse({
+        ...problem,
+        fieldErrors: [{ ...problem.fieldErrors[0], debug: 'secret' }],
+      }),
+    ).toThrow();
   });
 
   it('defines the strict 409 VERSION_CONFLICT response', () => {
@@ -123,18 +171,40 @@ describe('problem detail contracts', () => {
       type: VERSION_CONFLICT_TYPE,
       title: 'Version conflict',
       status: 409,
+      code: VERSION_CONFLICT,
+      message: 'The project changed after it was loaded.',
+      requestId: '01890f3e-b6e8-7e93-b9c4-809fb49d75c1',
+      retryable: false,
       detail: 'The project changed after it was loaded.',
       instance: '/projects/01890f3e-b6e8-7d37-a839-3f11a9ca1b79',
-      code: VERSION_CONFLICT,
-      resourceId: RESOURCE_ID,
+      resource: { tenantId: TENANT_ID, id: RESOURCE_ID },
       expectedVersion: 2,
       currentVersion: 3,
       currentETag: '"3"',
+      current: {
+        tenantId: TENANT_ID,
+        id: RESOURCE_ID,
+        version: 3,
+        etag: '"3"',
+        name: 'Research brief',
+      },
     };
 
     expect(VersionConflictProblemSchema.parse(problem)).toEqual(problem);
     expect(() =>
       VersionConflictProblemSchema.parse({ ...problem, currentETag: '"2"' }),
+    ).toThrow();
+    expect(() =>
+      VersionConflictProblemSchema.parse({
+        ...problem,
+        current: { ...problem.current, version: 2 },
+      }),
+    ).toThrow();
+    expect(() =>
+      VersionConflictProblemSchema.parse({
+        ...problem,
+        current: { ...problem.current, id: TENANT_ID },
+      }),
     ).toThrow();
     expect(() =>
       VersionConflictProblemSchema.parse({ ...problem, stack: 'secret' }),
