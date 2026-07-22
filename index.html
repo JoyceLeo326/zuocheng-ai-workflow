@@ -66,6 +66,20 @@
           </aside>
         </header>
 
+        <aside class="cost-boundary" data-cost-boundary aria-labelledby="cost-boundary-title">
+          <div class="cost-boundary-title">
+            <span>成本与演示边界</span>
+            <strong id="cost-boundary-title">项目所有者固定成本 0 · 零自动账单</strong>
+          </div>
+          <div class="cost-boundary-facts">
+            <span><small>当前执行</small><b>核心能力全部在浏览器本地</b></span>
+            <span><small>成本状态</small><b data-cost-owner>本地 0 成本</b></span>
+            <span><small>远程服务</small><b data-cost-usage>用量不适用</b></span>
+            <span><small>公开性质</small><b>个人非商业作品演示</b></span>
+          </div>
+          <p>当前未连接远程 Provider；零成本模式会拒绝未来付费 Provider，并在免费额度耗尽或无法核实时关闭远程调用。</p>
+        </aside>
+
         <div class="launchpad-grid">
           <form class="task-form" data-task-form>
             <div class="task-form-head">
@@ -605,6 +619,7 @@
   </footer>
 
   <div class="toast" role="status" aria-live="polite" data-toast>已复制</div>
+  <script src="cost-policy.js"></script>
   <script src="planner.js"></script>
   <script src="script.js"></script>
 </body>

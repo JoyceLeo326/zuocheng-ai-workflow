@@ -56,6 +56,19 @@
     revealNodes.forEach(node => observer.observe(node));
   }
 
+  // Zero-owner-cost runtime boundary
+  const costPolicy = window.ZuochengCostPolicy?.createCostPolicy();
+  const localCostDecision = costPolicy?.authorize({ execution: 'local', capability: 'task_planning' });
+  const costOwner = $('[data-cost-owner]');
+  const costUsage = $('[data-cost-usage]');
+  if (localCostDecision?.allowed && costPolicy?.automaticBilling === false) {
+    if (costOwner) costOwner.textContent = '本地 0 成本';
+    if (costUsage) costUsage.textContent = '用量不适用';
+  } else {
+    if (costOwner) costOwner.textContent = '成本策略未通过';
+    if (costUsage) costUsage.textContent = '远程能力已关闭';
+  }
+
   // Local-first task launchpad
   const TASK_STORAGE_KEY = 'zuocheng-task-v1';
   const taskForm = $('[data-task-form]');
