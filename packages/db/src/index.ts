@@ -1,9 +1,8 @@
-export type DatabaseReadiness =
-  | { ready: true; migrationVersion: string }
-  | { ready: false; reason: 'not-configured-until-zc-02' };
+export * from './schema.js';
 
-export const DATABASE_FOUNDATION_STATUS: DatabaseReadiness = Object.freeze({
+export const DATABASE_FOUNDATION_STATUS = Object.freeze({
+  dialect: 'postgresql',
+  migrationVersion: '0000_foundation',
   ready: false,
-  reason: 'not-configured-until-zc-02',
-});
-
+  reason: 'runtime-database-probe-required',
+} as const);

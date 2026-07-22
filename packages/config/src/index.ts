@@ -8,6 +8,7 @@ import { z } from 'zod';
 const EnvironmentSchema = z.object({
   DEPLOYMENT_MODE: DeploymentModeSchema.default('local'),
   PORT: z.coerce.number().int().min(1).max(65_535).default(3000),
+  TENANT_RUNTIME_ADAPTER_MODULE: z.string().trim().min(1).optional(),
 });
 
 export type RuntimeEnvironment = z.infer<typeof EnvironmentSchema> &
@@ -53,6 +54,8 @@ export function parseRuntimeEnvironment(
   const runtime = EnvironmentSchema.parse({
     DEPLOYMENT_MODE: environment.DEPLOYMENT_MODE,
     PORT: environment.PORT,
+    TENANT_RUNTIME_ADAPTER_MODULE:
+      environment.TENANT_RUNTIME_ADAPTER_MODULE,
   });
 
   return { ...runtime, ...ZERO_OWNER_COST_POLICY };
