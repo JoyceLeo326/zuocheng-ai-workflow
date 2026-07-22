@@ -2,17 +2,19 @@
 
 > 别再收藏工具，先做成一件事。
 
-![做成■｜从模糊待办到可交付结果](assets/og-cover.jpg)
+![做成■｜从模糊待办到可交付结果](apps/marketing/assets/og-cover.jpg)
 
 做成■ 是一套面向大学生真实任务的 AI 学习工作流。它不从模型参数或工具清单讲起，而是从课堂汇报、文献梳理、用户调研、商赛分析、答辩准备等近期必须提交的任务开始，带用户完成从 `□ 待办` 到 `■ 交付` 的完整闭环。
 
 ## 真实性边界
 
-本仓库是个人作品案例与教学演示，不是已上线运营产品的业绩报告。站内问卷、访谈、反馈、招募人数、完成率与增长漏斗等数字均为方案设计、界面占位或验证目标，用于说明方法与产品逻辑；不代表真实用户数据、已完成招募、已开展访谈或既有运营成绩。
+公开营销页原有内容是个人作品案例与教学演示，不是已上线运营产品的业绩报告。站内问卷、访谈、反馈、招募人数、完成率与增长漏斗等数字均为方案设计、界面占位或验证目标，用于说明方法与产品逻辑；不代表真实用户数据、已完成招募、已开展访谈或既有运营成绩。
+
+仓库现已进入正式产品重构：ZC-01 只完成 monorepo、应用边界、只读 CI 和客户自托管部署骨架。身份、数据库、文件、AI、导出、课程、运营和商业闭环仍以[需求—证据台账](docs/requirements/zuocheng-requirements.md)为准；没有生产证据的功能不会被描述为完成。
 
 ## 成本策略
 
-项目默认运行在 `COST_MODE=zero_owner_cost`：核心能力全部在浏览器本地完成，不连接远程 Provider，不启用自动账单。页面中的成本状态只陈述“本地 0 成本 / 远程用量不适用”，不展示虚构的真实用量或节省数据。完整的 Provider 拒绝、额度耗尽和托管边界见[零所有者成本运行策略](docs/zero-owner-cost.md)。
+项目默认运行在 `COST_MODE=zero_owner_cost`，禁止所有者付费 Provider、自动充值和自动升级。个人本地模式继续在浏览器完成；免费托管只作为额度耗尽即停止的 Beta；商业正式路径由用户、学校或机构在其名下提供 API、数据库、BYOS、邮件、监控和备份资源。页面中的成本状态不展示虚构用量。完整边界见[ADR-0001](docs/adr/0001-zero-owner-cost-production.md)和[零所有者成本运行策略](docs/zero-owner-cost.md)。
 
 ## 产品结构
 
@@ -35,10 +37,13 @@
 
 ## 本地运行
 
-这是一个无构建步骤、无第三方依赖的静态网站。
+需要 Node `24.14+`（低于 25）和仓库锁定的 pnpm `11.9.0`：
 
 ```bash
-python3 -m http.server 4173
+corepack enable
+pnpm install --frozen-lockfile
+pnpm verify
+pnpm --filter @zuocheng/marketing dev
 ```
 
 然后访问：
@@ -47,44 +52,41 @@ python3 -m http.server 4173
 http://localhost:4173
 ```
 
-直接打开 `index.html` 也可以浏览，但使用本地服务器能更接近线上环境。
+学生端和后台分别使用 `pnpm --filter @zuocheng/student dev`、`pnpm --filter @zuocheng/admin dev`。API/Worker 目前只是诚实的 ZC-01 边界；生产模式 `/readyz` 会在 ZC-02 数据库落地前返回 503。
 
 ## Vercel 部署
 
-Vercel 部署只适用于个人非商业作品演示，并应使用不带付费附加项的 Hobby 配置。仓库导入 Vercel 后无需选择框架，也无需填写构建命令：
+Vercel 部署只适用于个人非商业作品演示，并应使用不带付费附加项的 Hobby 配置。根 `vercel.json` 只构建 `apps/marketing` 的公开 allowlist，不发布内部审计和计划：
 
 - Framework Preset：Other
-- Build Command：留空
-- Output Directory：`.`
-- Install Command：留空
+- Build Command：`pnpm --filter @zuocheng/marketing build`
+- Output Directory：`apps/marketing/dist`
+- Install Command：`pnpm install --frozen-lockfile`
 
-`vercel.json` 已配置静态路由与常用安全响应头。
+商业正式部署不使用 Vercel Hobby，采用部署客户名下的自托管/客户云资源，见 `deploy/README.md`。
 
 ## 文件结构
 
 ```text
 .
-├── .env.example
-├── cost-policy.js
-├── index.html
-├── planner.js
-├── styles.css
-├── script.js
-├── vercel.json
-├── qa
-│   ├── verify-authenticity.mjs
-│   ├── verify-product-depth.mjs
-│   └── verify-zero-owner-cost.mjs
-├── assets
-│   ├── og-cover.jpg
-│   ├── og-cover.svg
-│   └── 做成-AI学习工作流.pdf
-└── docs
-    ├── product-architecture.md
-    ├── content-system.md
-    ├── launch-playbook.md
-    ├── measurement.md
-    └── zero-owner-cost.md
+├── apps
+│   ├── marketing       # 原品牌页与课程资产的唯一构建源
+│   ├── student         # 学生工作台边界
+│   └── admin           # 运营后台边界
+├── services
+│   ├── api             # Hono API、存活/就绪/成本策略
+│   └── worker          # 异步任务进程边界
+├── packages
+│   ├── contracts       # 跨端运行时契约
+│   ├── config          # 启动即 fail-closed 的配置
+│   └── db              # ZC-02 数据层边界
+├── deploy              # 客户托管 Compose 骨架
+├── qa                  # 基线和 monorepo 门禁
+├── docs                # ADR、审计、计划与需求台账
+├── Dockerfile
+├── package.json
+├── pnpm-lock.yaml
+└── vercel.json         # 仅营销页非商业预览
 ```
 
 ## 设计与交互

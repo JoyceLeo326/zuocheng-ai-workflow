@@ -1,0 +1,42 @@
+name: Verify source
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Lint, typecheck, test, and build
+    runs-on: [self-hosted, tenant-managed, linux, x64]
+    timeout-minutes: 30
+    steps:
+      - name: Check out the requested commit without write credentials
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Verify pinned toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(node --version)" = "v$(cat .nvmrc)"
+          corepack enable
+          test "$(pnpm --version)" = "11.9.0"
+
+      - name: Install the reviewed lockfile
+        run: pnpm install --frozen-lockfile
+
+      - name: Run all repository gates
+        run: pnpm verify
+
+      - name: Prove verification did not rewrite source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          test -z "$(git status --porcelain)"
+

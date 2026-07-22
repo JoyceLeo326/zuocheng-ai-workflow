@@ -7,10 +7,11 @@ import { fileURLToPath } from "node:url";
 
 const qaDir = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(qaDir, "..");
-const indexHtml = readFileSync(path.join(rootDir, "index.html"), "utf8");
-const script = readFileSync(path.join(rootDir, "script.js"), "utf8");
+const marketingDir = path.join(rootDir, "apps", "marketing");
+const indexHtml = readFileSync(path.join(marketingDir, "index.html"), "utf8");
+const script = readFileSync(path.join(marketingDir, "script.js"), "utf8");
 const readme = readFileSync(path.join(rootDir, "README.md"), "utf8");
-const plannerPath = path.join(rootDir, "planner.js");
+const plannerPath = path.join(marketingDir, "planner.js");
 const require = createRequire(import.meta.url);
 
 function countClass(html, className) {
