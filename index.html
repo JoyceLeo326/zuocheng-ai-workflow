@@ -53,6 +53,73 @@
   <main id="main">
     <section class="hero" id="top">
       <div class="hero-grid" aria-hidden="true"></div>
+      <section class="task-launchpad reveal" id="task-launchpad" data-task-launchpad aria-labelledby="task-launchpad-title">
+        <header class="launchpad-head">
+          <div>
+            <p class="launchpad-kicker"><span>现在可用</span> 本地任务启动台</p>
+            <h1 id="task-launchpad-title">写下任务，排出<br>能执行的 7 天。</h1>
+            <p>先定截止时间与交付标准，再把每天推进到可勾选、可带走的结果。</p>
+          </div>
+          <aside class="local-rule-note">
+            <b>LOCAL / RULE-BASED</b>
+            <p>计划由浏览器本地规则生成，并非 AI 模型输出；你的输入与进度只保存在当前浏览器。</p>
+          </aside>
+        </header>
+
+        <div class="launchpad-grid">
+          <form class="task-form" data-task-form>
+            <div class="task-form-head">
+              <span>01 / 定义任务</span>
+              <strong>四个字段，先把“要做”变成“要交”。</strong>
+            </div>
+            <label>
+              <span>任务名称</span>
+              <input type="text" name="taskName" maxlength="60" placeholder="例：完成学院创新赛答辩" required>
+            </label>
+            <div class="task-form-row">
+              <label>
+                <span>截止日期</span>
+                <input type="date" name="deadline" required>
+              </label>
+              <label>
+                <span>交付形式</span>
+                <input type="text" name="deliverable" maxlength="60" placeholder="例：5 页答辩稿" required>
+              </label>
+            </div>
+            <label>
+              <span>关键约束</span>
+              <textarea name="constraints" rows="3" maxlength="160" placeholder="例：只用一手材料；每天最多 45 分钟" required></textarea>
+            </label>
+            <button class="task-generate" type="submit">
+              <span>生成本地 7 天计划</span><b aria-hidden="true">□ → ■</b>
+            </button>
+            <p class="task-form-status" data-task-status aria-live="polite">尚未生成计划。填写四个字段后即可开始。</p>
+          </form>
+
+          <section class="task-plan-panel" aria-labelledby="task-plan-title">
+            <div class="task-plan-head">
+              <div><span>02 / 每日推进</span><h2 id="task-plan-title" data-task-plan-title>你的 7 天行动计划</h2></div>
+              <strong data-task-progress>0 / 7</strong>
+            </div>
+            <div class="task-progress-track" aria-hidden="true"><i data-task-progress-bar></i></div>
+            <div class="task-plan" data-task-plan aria-live="polite">
+              <button type="button" data-task-day data-day-index="0" aria-pressed="false" disabled><b>□</b><span><small data-task-date>待排期</small><strong data-task-day-title>定义交付标准</strong><i data-task-day-action>明确任务、听众与验收条件。</i><em data-task-day-output>当日产出：任务定义卡</em></span></button>
+              <button type="button" data-task-day data-day-index="1" aria-pressed="false" disabled><b>□</b><span><small data-task-date>待排期</small><strong data-task-day-title>收齐必要输入</strong><i data-task-day-action>整理资料并保留来源。</i><em data-task-day-output>当日产出：输入清单</em></span></button>
+              <button type="button" data-task-day data-day-index="2" aria-pressed="false" disabled><b>□</b><span><small data-task-date>待排期</small><strong data-task-day-title>搭建交付骨架</strong><i data-task-day-action>让内容顺序回答关键问题。</i><em data-task-day-output>当日产出：结构草图</em></span></button>
+              <button type="button" data-task-day data-day-index="3" aria-pressed="false" disabled><b>□</b><span><small data-task-date>待排期</small><strong data-task-day-title>完成可检查初稿</strong><i data-task-day-action>先完整，再优化表达。</i><em data-task-day-output>当日产出：内容初稿</em></span></button>
+              <button type="button" data-task-day data-day-index="4" aria-pressed="false" disabled><b>□</b><span><small data-task-date>待排期</small><strong data-task-day-title>逐项核验与删改</strong><i data-task-day-action>回查数字、引用、逻辑和格式。</i><em data-task-day-output>当日产出：核验记录</em></span></button>
+              <button type="button" data-task-day data-day-index="5" aria-pressed="false" disabled><b>□</b><span><small data-task-date>待排期</small><strong data-task-day-title>模拟真实使用</strong><i data-task-day-action>完整演练并修正卡点。</i><em data-task-day-output>当日产出：候选终稿</em></span></button>
+              <button type="button" data-task-day data-day-index="6" aria-pressed="false" disabled><b>□</b><span><small data-task-date>待排期</small><strong data-task-day-title>提交并沉淀模板</strong><i data-task-day-action>交付成果，留下可复用路径。</i><em data-task-day-output>当日产出：最终交付</em></span></button>
+            </div>
+            <div class="task-plan-actions">
+              <button type="button" data-export-plan disabled>下载 Markdown <span>↓</span></button>
+              <button type="button" data-reset-task>重置当前任务</button>
+              <small>完成状态会实时保存在当前浏览器。</small>
+            </div>
+          </section>
+        </div>
+      </section>
+
       <div class="hero-copy reveal">
         <aside class="authenticity-notice" aria-labelledby="authenticity-title">
           <p class="authenticity-status">项目状态</p>
@@ -60,7 +127,7 @@
           <p>本页用于展示课程产品与交互方案。页面中的问卷、访谈、反馈与漏斗数字均为方案设计与教学演示，不代表真实用户数据或既有运营成绩。</p>
         </aside>
         <p class="hero-kicker"><span class="live-dot"></span> 面向大学生真实任务的 AI 学习工作流</p>
-        <h1><span class="hero-line-dark">别再收藏工具，</span><span class="hero-line-blue">先做成一件事。</span></h1>
+        <h2 class="hero-statement"><span class="hero-line-dark">别再收藏工具，</span><span class="hero-line-blue">先做成一件事。</span></h2>
         <p class="hero-lead">不从模型参数讲起。从你下周要交的汇报、调研、答辩开始，把模糊任务压成能检查、能提交的结果。</p>
         <div class="hero-actions">
           <a class="button button-dark" href="#workbench">把 25 页资料做成 3 页汇报 <span>→</span></a>
@@ -538,6 +605,7 @@
   </footer>
 
   <div class="toast" role="status" aria-live="polite" data-toast>已复制</div>
+  <script src="planner.js"></script>
   <script src="script.js"></script>
 </body>
 </html>

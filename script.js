@@ -56,6 +56,161 @@
     revealNodes.forEach(node => observer.observe(node));
   }
 
+  // Local-first task launchpad
+  const TASK_STORAGE_KEY = 'zuocheng-task-v1';
+  const taskForm = $('[data-task-form]');
+  const taskDayButtons = $$('[data-task-day]');
+  const taskStatus = $('[data-task-status]');
+  const exportPlanButton = $('[data-export-plan]');
+  const deadlineInput = taskForm?.elements.namedItem('deadline');
+  const initialTaskRows = taskDayButtons.map(button => ({
+    date: $('[data-task-date]', button)?.textContent || '',
+    title: $('[data-task-day-title]', button)?.textContent || '',
+    action: $('[data-task-day-action]', button)?.textContent || '',
+    output: $('[data-task-day-output]', button)?.textContent || ''
+  }));
+  let taskState = null;
+
+  const localToday = () => {
+    const now = new Date();
+    return new Date(now.valueOf() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  };
+  if (deadlineInput) deadlineInput.min = localToday();
+
+  const getTaskInput = () => ({
+    taskName: taskForm.elements.namedItem('taskName').value,
+    deadline: taskForm.elements.namedItem('deadline').value,
+    deliverable: taskForm.elements.namedItem('deliverable').value,
+    constraints: taskForm.elements.namedItem('constraints').value
+  });
+
+  const fillTaskInput = (input) => {
+    Object.entries(input).forEach(([name, value]) => {
+      const field = taskForm?.elements.namedItem(name);
+      if (field) field.value = value;
+    });
+  };
+
+  const saveTaskState = () => {
+    if (!taskState) return;
+    try {
+      localStorage.setItem(TASK_STORAGE_KEY, JSON.stringify(taskState));
+    } catch (_) {
+      if (taskStatus) taskStatus.textContent = '计划可继续使用，但当前浏览器阻止了本地保存。';
+    }
+  };
+
+  const renderEmptyTask = () => {
+    taskDayButtons.forEach((button, index) => {
+      const row = initialTaskRows[index];
+      button.disabled = true;
+      button.classList.remove('complete');
+      button.setAttribute('aria-pressed', 'false');
+      $('b', button).textContent = '□';
+      $('[data-task-date]', button).textContent = row.date;
+      $('[data-task-day-title]', button).textContent = row.title;
+      $('[data-task-day-action]', button).textContent = row.action;
+      $('[data-task-day-output]', button).textContent = row.output;
+    });
+    $('[data-task-plan-title]').textContent = '你的 7 天行动计划';
+    $('[data-task-progress]').textContent = '0 / 7';
+    $('[data-task-progress-bar]').style.width = '0%';
+    if (exportPlanButton) exportPlanButton.disabled = true;
+  };
+
+  const renderTaskState = (message) => {
+    if (!taskState || !window.ZuochengPlanner) return;
+    const plan = window.ZuochengPlanner.createPlan(taskState.input);
+    taskDayButtons.forEach((button, index) => {
+      const day = plan[index];
+      const done = Boolean(taskState.completed[index]);
+      button.disabled = false;
+      button.classList.toggle('complete', done);
+      button.setAttribute('aria-pressed', String(done));
+      button.setAttribute('aria-label', `第 ${day.day} 天，${day.title}，${done ? '已完成' : '未完成'}`);
+      $('b', button).textContent = done ? '■' : '□';
+      $('[data-task-date]', button).textContent = `第 ${day.day} 天 · ${day.date}`;
+      $('[data-task-day-title]', button).textContent = day.title;
+      $('[data-task-day-action]', button).textContent = day.action;
+      $('[data-task-day-output]', button).textContent = `当日产出：${day.output}`;
+    });
+    const completedCount = taskState.completed.filter(Boolean).length;
+    $('[data-task-plan-title]').textContent = `${taskState.input.taskName} · 7 天计划`;
+    $('[data-task-progress]').textContent = `${completedCount} / 7`;
+    $('[data-task-progress-bar]').style.width = `${(completedCount / 7) * 100}%`;
+    if (exportPlanButton) exportPlanButton.disabled = false;
+    if (taskStatus && message) taskStatus.textContent = message;
+  };
+
+  taskForm?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    if (!window.ZuochengPlanner) {
+      taskStatus.textContent = '本地规划规则加载失败，请刷新页面后重试。';
+      return;
+    }
+    try {
+      const input = window.ZuochengPlanner.normalizeInput(getTaskInput());
+      window.ZuochengPlanner.createPlan(input);
+      taskState = { input, completed: Array(7).fill(false) };
+      saveTaskState();
+      renderTaskState('计划已生成并保存在当前浏览器。逐日点击即可记录进度。');
+      toast('7 天计划已在本地生成');
+    } catch (error) {
+      taskStatus.textContent = error.message || '请检查任务字段后重试。';
+    }
+  });
+
+  taskDayButtons.forEach((button, index) => button.addEventListener('click', () => {
+    if (!taskState) return;
+    taskState.completed[index] = !taskState.completed[index];
+    saveTaskState();
+    renderTaskState(taskState.completed[index] ? `第 ${index + 1} 天已完成。` : `第 ${index + 1} 天已恢复为未完成。`);
+  }));
+
+  exportPlanButton?.addEventListener('click', () => {
+    if (!taskState || !window.ZuochengPlanner) return;
+    const plan = window.ZuochengPlanner.createPlan(taskState.input);
+    const markdown = window.ZuochengPlanner.createMarkdown(taskState.input, plan, taskState.completed);
+    const blob = new Blob([`\ufeff${markdown}`], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    const safeName = taskState.input.taskName.replace(/[\\/:*?"<>|]/g, '-').slice(0, 50) || '做成任务计划';
+    link.href = url;
+    link.download = `${safeName}-7天行动计划.md`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+    toast('Markdown 行动计划已下载');
+  });
+
+  $('[data-reset-task]')?.addEventListener('click', () => {
+    taskState = null;
+    try { localStorage.removeItem(TASK_STORAGE_KEY); } catch (_) {}
+    taskForm?.reset();
+    if (deadlineInput) deadlineInput.min = localToday();
+    renderEmptyTask();
+    if (taskStatus) taskStatus.textContent = '当前任务已重置，本地进度也已清除。';
+    taskForm?.elements.namedItem('taskName')?.focus();
+    toast('当前任务已重置');
+  });
+
+  try {
+    const savedTask = JSON.parse(localStorage.getItem(TASK_STORAGE_KEY) || 'null');
+    if (savedTask?.input && Array.isArray(savedTask.completed) && savedTask.completed.length === 7) {
+      const input = window.ZuochengPlanner.normalizeInput(savedTask.input);
+      window.ZuochengPlanner.createPlan(input);
+      taskState = { input, completed: savedTask.completed.map(Boolean) };
+      fillTaskInput(input);
+      renderTaskState('已从当前浏览器恢复任务与逐日进度。');
+    }
+  } catch (_) {
+    taskState = null;
+    try { localStorage.removeItem(TASK_STORAGE_KEY); } catch (_) {}
+    renderEmptyTask();
+    if (taskStatus) taskStatus.textContent = '旧任务记录无法读取，已安全重置。';
+  }
+
   // Hero machine
   const machineButton = $('[data-machine-button]');
   machineButton?.addEventListener('click', () => {
