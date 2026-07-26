@@ -1,3 +1,4 @@
+import { strToU8, zipSync } from 'fflate';
 import { describe, expect, it } from 'vitest';
 import { MemoryProjectStore } from './project-store.js';
 import {
@@ -55,6 +56,31 @@ function sequentialIds(): () => string {
 function pdfFile(content = '%PDF-real-source'): File {
   return new File([content], 'course.pdf', {
     type: 'application/pdf',
+  });
+}
+
+function docxFile(): File {
+  const bytes = zipSync(
+    {
+      '[Content_Types].xml': strToU8(`<?xml version="1.0"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Override PartName="/word/document.xml"
+    ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+</Types>`),
+      'word/document.xml': strToU8(`<?xml version="1.0"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    <w:p><w:r><w:t>课程要求必须保留引用。</w:t></w:r></w:p>
+    <w:p><w:r><w:t>结构需要覆盖评分标准。</w:t></w:r></w:p>
+  </w:body>
+</w:document>`),
+    },
+    { level: 6 },
+  );
+  const owned = new Uint8Array(bytes.length);
+  owned.set(bytes);
+  return new File([owned.buffer], 'requirements.docx', {
+    type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   });
 }
 
@@ -490,5 +516,44 @@ describe('WorkbenchService first-stage orchestration', () => {
       name: 'WorkbenchServiceInputError',
       code: 'SOURCE_QUOTE_MISMATCH',
     });
+  });
+
+  it('ingests a real DOCX archive through the workbench pipeline', async () => {
+    const store = new MemoryProjectStore();
+    const service = createWorkbenchService({
+      store,
+      idFactory: sequentialIds(),
+      now: () => new Date('2026-07-27T01:00:00.000Z'),
+    });
+    const initial = await service.createProject(
+      form({
+        rubric: [
+          {
+            title: '要求',
+            description: '覆盖课程要求',
+            weightPercent: '100',
+          },
+        ],
+      }),
+    );
+
+    const result = await service.ingestSourceFile(
+      initial.id,
+      docxFile(),
+    );
+
+    expect(result.status).toBe('ready');
+    if (result.status !== 'ready') {
+      throw new Error('expected DOCX source to be ready');
+    }
+    expect(result.sourceFile).toMatchObject({
+      fileName: 'requirements.docx',
+      status: 'ready',
+      pageCount: 1,
+    });
+    expect(result.chunks.map((chunk) => chunk.text)).toEqual([
+      '课程要求必须保留引用。',
+      '结构需要覆盖评分标准。',
+    ]);
   });
 });

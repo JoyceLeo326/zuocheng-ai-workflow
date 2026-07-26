@@ -29,6 +29,7 @@ import {
   type BrowserSourceParserErrorCode,
   type TraceableTextChunk,
 } from './text-parsers.js';
+import type { BrowserOfficeParserErrorCode } from './docx-pptx-parser.js';
 
 export interface WorkbenchRubricFormInput {
   title: string;
@@ -69,6 +70,7 @@ export interface WorkbenchEvidenceInput {
 export type SourceIngestionFailureCode =
   | SourceParserFailureCode
   | BrowserSourceParserErrorCode
+  | BrowserOfficeParserErrorCode
   | 'INVALID_PARSER_OUTPUT';
 
 export type SourceIngestionResult =
@@ -299,9 +301,6 @@ class DefaultWorkbenchService implements WorkbenchService {
       throw new ProjectNotFoundError(projectId);
     }
     const upload = validateSourceUpload(file);
-    if (upload.kind === 'docx' || upload.kind === 'pptx') {
-      throw new WorkbenchServiceInputError('UNSUPPORTED_SOURCE_KIND');
-    }
     const sha256 = await computeSourceFileSha256(
       file,
       this.cryptoProvider,
@@ -399,6 +398,37 @@ class DefaultWorkbenchService implements WorkbenchService {
             parsingProject,
             parsingSource,
             'INVALID_PARSER_OUTPUT',
+          );
+        }
+        throw error;
+      }
+    } else if (upload.kind === 'docx' || upload.kind === 'pptx') {
+      const {
+        BrowserOfficeParserError,
+        parseBrowserOfficeFile,
+      } = await import('./docx-pptx-parser.js');
+      try {
+        const parsed = await parseBrowserOfficeFile(
+          {
+            file,
+            source: parsingDomainSource,
+            sourceFileVersion: parsingSource.sourceVersion,
+          },
+          this.cryptoProvider,
+        );
+        chunks = this.createTraceableProjectChunks(
+          parsingProject.id,
+          parsingSource,
+          parsed.chunks,
+          chunksAt,
+        );
+        pageCount = parsed.pageCount;
+      } catch (error) {
+        if (error instanceof BrowserOfficeParserError) {
+          return this.persistParseFailure(
+            parsingProject,
+            parsingSource,
+            error.code,
           );
         }
         throw error;
