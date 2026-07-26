@@ -87,6 +87,25 @@ describe('identity API client', () => {
           sha256: null,
         });
       }
+      if (url.endsWith('/recent-auth/password')) {
+        return jsonResponse(200, {
+          recentAuthToken: 'opaque-recent-auth-proof',
+          expiresAt: '2026-07-26T08:35:00.000Z',
+        });
+      }
+      if (url.endsWith('/deletion')) {
+        return jsonResponse(202, {
+          deletion: {
+            id: '01900000-0000-7000-8000-000000000009',
+            status: 'pending',
+            requestedAt: '2026-07-26T08:30:00.000Z',
+            cancellableUntil: '2026-07-27T08:30:00.000Z',
+            irreversibleAt: null,
+            completedAt: null,
+          },
+          confirmationDelivery: { channel: 'email', status: 'sent' },
+        });
+      }
       if (url.endsWith('/deletion/confirm')) {
         return jsonResponse(202, {
           id: '01900000-0000-7000-8000-000000000009',
@@ -123,7 +142,13 @@ describe('identity API client', () => {
     await client.startOAuth('google', { returnTo: '/account/security' });
     await client.listSessions();
     await client.listDevices();
+    const recentAuth = await client.verifyRecentPassword({
+      password: 'correct horse battery staple',
+    });
     await client.requestAccountExport();
+    await client.requestAccountDeletion({
+      recentAuthToken: recentAuth.recentAuthToken,
+    });
     await client.confirmAccountDeletion({
       deletionRequestId: '01900000-0000-7000-8000-000000000009',
       confirmationToken: 'opaque-confirmation',
@@ -134,7 +159,9 @@ describe('identity API client', () => {
       'POST /v1/auth/oauth/google/start',
       'GET /v1/auth/sessions',
       'GET /v1/auth/devices',
+      'POST /v1/auth/recent-auth/password',
       'POST /v1/account/exports',
+      'POST /v1/account/deletion',
       'POST /v1/account/deletion/confirm',
     ]);
     expect(Object.keys(client)).not.toContain('getSessionToken');
