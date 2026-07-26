@@ -46,7 +46,11 @@ describe.sequential('ZC-03 ordered identity migrations and attacks', () => {
   }
 
   beforeAll(async () => {
-    expect(migrationFiles).toEqual(['0000_foundation.sql', '0001_identity.sql']);
+    expect(migrationFiles).toEqual([
+      '0000_foundation.sql',
+      '0001_identity.sql',
+      '0002_account_rights.sql',
+    ]);
     for (const migration of migrations) {
       await db.exec(migration);
     }
@@ -188,6 +192,91 @@ describe.sequential('ZC-03 ordered identity migrations and attacks', () => {
           AND relation.relforcerowsecurity`,
     );
     expect(forced.rows).toEqual([{ count: 6 }]);
+  });
+
+  it('applies account-rights persistence with digest-only idempotency and export integrity', async () => {
+    await becomeAuth();
+    const sessionDevice = await db.query<{ device_public_id: string }>(
+      `SELECT device_public_id::text
+         FROM zuocheng.session
+        WHERE id = $1`,
+      [sessionA],
+    );
+    expect(sessionDevice.rows[0]?.device_public_id).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u,
+    );
+
+    await db.query(
+      `INSERT INTO zuocheng.identity_idempotency
+         (actor_scope_hash, operation, key_hash, request_hash)
+       VALUES (repeat('1', 64), 'account-export-request',
+               repeat('2', 64), repeat('3', 64))`,
+    );
+    const idempotency = await db.query<{
+      key_hash: string;
+      request_hash: string;
+      status: string;
+    }>(
+      `SELECT key_hash, request_hash, status
+         FROM zuocheng.identity_idempotency`,
+    );
+    expect(idempotency.rows).toEqual([
+      {
+        key_hash: '2'.repeat(64),
+        request_hash: '3'.repeat(64),
+        status: 'processing',
+      },
+    ]);
+
+    const captured = await db.query<{ snapshot: unknown }>(
+      `SELECT zuocheng.capture_account_export($1)::jsonb AS snapshot`,
+      [userA],
+    );
+    // PGlite validates the function body and returned shape but does not
+    // emulate PostgreSQL SECURITY DEFINER role switching through FORCE RLS.
+    // The native PostgreSQL 17 gate below asserts the actual user projection.
+    expect(captured.rows[0]?.snapshot).toMatchObject({
+      memberships: expect.any(Array),
+      projects: expect.any(Array),
+      versions: expect.any(Array),
+      audit: expect.any(Array),
+      courses: [],
+      usage: [],
+      ledger: [],
+    });
+
+    const inserted = await db.query<{ id: string }>(
+      `INSERT INTO zuocheng.account_export_request
+         (user_id, requested_by_session_id)
+       VALUES ($1, $2)
+       RETURNING id::text`,
+      [userA, sessionA],
+    );
+    await db.query(
+      `UPDATE zuocheng.account_export_request
+          SET status = 'ready',
+              manifest = '{"schemaVersion":1}'::jsonb,
+              manifest_sha256 = repeat('a', 64),
+              artifact_url = 'https://customer-storage.example/export.json',
+              artifact_sha256 = repeat('a', 64),
+              completed_at = now(),
+              expires_at = now() + interval '1 day'
+        WHERE id = $1`,
+      [inserted.rows[0]?.id],
+    );
+    const exportRow = await db.query<{
+      status: string;
+      integrity_matches: boolean;
+    }>(
+      `SELECT status,
+              manifest_sha256 = artifact_sha256 AS integrity_matches
+         FROM zuocheng.account_export_request
+        WHERE id = $1`,
+      [inserted.rows[0]?.id],
+    );
+    expect(exportRow.rows).toEqual([
+      { status: 'ready', integrity_matches: true },
+    ]);
   });
 
   it('resolves only unexpired, unrevoked sessions for active users and memberships', async () => {

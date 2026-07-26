@@ -12,6 +12,7 @@ if (!databaseUrl) {
 const migrationPaths = [
   fileURLToPath(new URL('../migrations/0000_foundation.sql', import.meta.url)),
   fileURLToPath(new URL('../migrations/0001_identity.sql', import.meta.url)),
+  fileURLToPath(new URL('../migrations/0002_account_rights.sql', import.meta.url)),
 ];
 const basePsqlArgs = [
   '--no-psqlrc',
@@ -112,8 +113,8 @@ const forcedRlsCount = Number(
   ]),
 );
 
-if (forcedRlsCount !== 15) {
-  throw new Error(`expected fifteen FORCE RLS tables; found ${forcedRlsCount}`);
+if (forcedRlsCount !== 17) {
+  throw new Error(`expected seventeen FORCE RLS tables; found ${forcedRlsCount}`);
 }
 
 const tenantId = '01900000-0000-7000-8000-000000000101';
@@ -127,6 +128,7 @@ const oauthStateIdentifierHash = 'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
 const expiredVerificationIdentifierHash = 'ggggggggggggggggggggggggggggggggggggggggggg';
 const tokenAadHash = 'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff';
 const versionedCiphertext = `$ba$7$${'ab'.repeat(32)}`;
+const exportIntegrityHash = '9999999999999999999999999999999999999999999999999999999999999999';
 const advisoryKey = 20260723;
 
 psql([
@@ -275,6 +277,61 @@ if (replayedOrExpiredVerificationCount !== 0) {
   );
 }
 
+const accountRightsState = psql([
+  '--tuples-only',
+  '--no-align',
+  '--command',
+  `SET SESSION AUTHORIZATION zuocheng_qa_auth;
+   SET ROLE zuocheng_auth;
+   INSERT INTO zuocheng.identity_idempotency
+     (actor_scope_hash, operation, key_hash, request_hash)
+     VALUES (
+       repeat('1', 64), 'native-account-export',
+       repeat('2', 64), repeat('3', 64)
+     );
+    DO $account_export$
+    DECLARE
+      export_id uuid;
+    BEGIN
+      INSERT INTO zuocheng.account_export_request
+        (user_id, requested_by_session_id)
+        VALUES ('${userA}', '${identitySessionId}')
+        RETURNING id INTO export_id;
+
+      UPDATE zuocheng.account_export_request
+         SET status = 'ready',
+             manifest = zuocheng.capture_account_export('${userA}'),
+             manifest_sha256 = '${exportIntegrityHash}',
+             artifact_url = 'https://customer-storage.example/native-export.json',
+             artifact_sha256 = '${exportIntegrityHash}',
+             completed_at = now(),
+             expires_at = now() + interval '1 day'
+       WHERE id = export_id;
+    END
+    $account_export$;
+   SELECT
+     (SELECT count(*) FROM zuocheng.identity_idempotency)::text
+     || '|'
+     || (SELECT count(*) FROM zuocheng.account_export_request
+          WHERE status = 'ready'
+            AND manifest_sha256 = artifact_sha256)::text
+     || '|'
+     || (SELECT count(*) FROM zuocheng.session
+          WHERE device_public_id IS NOT NULL)::text
+     || '|'
+     || (
+       CASE
+         WHEN zuocheng.capture_account_export('${userA}')
+                #>> '{account,id}' = '${userA}'
+         THEN '1'
+         ELSE '0'
+       END
+     );`,
+]).split(/\r?\n/).at(-1);
+if (accountRightsState !== '1|1|1|1') {
+  throw new Error(`unexpected account-rights persistence state: ${accountRightsState}`);
+}
+
 expectPsqlFailure(
   `SET SESSION AUTHORIZATION zuocheng_qa_auth;
    SET ROLE zuocheng_auth;
@@ -328,6 +385,19 @@ expectPsqlFailure(
      );`,
   '23514',
   'unadapted plaintext OAuth state attack',
+);
+
+expectPsqlFailure(
+  `SET SESSION AUTHORIZATION zuocheng_qa_auth;
+   SET ROLE zuocheng_auth;
+   INSERT INTO zuocheng.identity_idempotency
+     (actor_scope_hash, operation, key_hash, request_hash)
+     VALUES (
+       repeat('4', 64), 'native-invalid-key',
+       'raw-idempotency-key', repeat('5', 64)
+     );`,
+  '23514',
+  'raw identity idempotency key attack',
 );
 
 expectPsqlFailure(
@@ -439,5 +509,5 @@ if (versionCount !== 2) {
 }
 
 process.stdout.write(
-  'PostgreSQL 17 ordered migrations, identity attacks, FORCE RLS and two-connection CAS gate passed\n',
+  'PostgreSQL 17 ordered migrations, account rights, identity attacks, FORCE RLS and two-connection CAS gate passed\n',
 );
