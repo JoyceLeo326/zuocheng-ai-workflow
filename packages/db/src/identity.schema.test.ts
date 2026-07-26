@@ -280,15 +280,17 @@ describe('ZC-03 identity schema', () => {
 
   it('extends the native PostgreSQL 17 release gate through ordered identity attacks', () => {
     expect(nativePg17Qa).toMatch(
-      /0000_foundation\.sql[\s\S]*0001_identity\.sql[\s\S]*for \(const migrationPath of migrationPaths\)/i,
+      /0000_foundation\.sql[\s\S]*0001_identity\.sql[\s\S]*0002_account_rights\.sql[\s\S]*for \(const migrationPath of migrationPaths\)/i,
     );
-    expect(nativePg17Qa).toMatch(/forcedRlsCount !== 15/i);
+    expect(nativePg17Qa).toMatch(/forcedRlsCount !== 17/i);
     expect(nativePg17Qa).toMatch(/SET SESSION AUTHORIZATION zuocheng_qa_auth/i);
     expect(nativePg17Qa).toMatch(/resolve_identity_session/i);
     expect(nativePg17Qa).toMatch(/plaintext-session-token/i);
     expect(nativePg17Qa).toMatch(/raw-access-token/i);
     expect(nativePg17Qa).toMatch(/plaintext-oauth-state/i);
     expect(nativePg17Qa).toMatch(/consume_verification_value/i);
+    expect(nativePg17Qa).toMatch(/capture_account_export/i);
+    expect(nativePg17Qa).toMatch(/raw identity idempotency key attack/i);
     expect(nativePg17Qa).toMatch(/zuocheng_auth[\s\S]*zuocheng\.project/i);
   });
 });
