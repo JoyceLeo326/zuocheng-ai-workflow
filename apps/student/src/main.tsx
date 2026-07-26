@@ -60,6 +60,19 @@ const courseLearnerId = persistentBrowserId(
   'zuocheng.course.learner-id',
 );
 const courseEnrollmentId = `zuocheng-7-day:${courseLearnerId}`;
+const initialSearchParams = new URLSearchParams(
+  window.location.search,
+);
+const requestedAccountMode =
+  initialSearchParams.get('account') === 'register'
+    ? 'register'
+    : initialSearchParams.get('account') === 'login'
+      ? 'login'
+      : null;
+const requestedWorkbenchView =
+  initialSearchParams.get('view') === 'courses'
+    ? 'courses'
+    : 'workbench';
 
 function useOnlineStatus(): boolean {
   const [online, setOnline] = useState(window.navigator.onLine);
@@ -79,7 +92,7 @@ function StudentApplication() {
   const surface = studentSurfaceForPath(window.location.pathname);
   const online = useOnlineStatus();
   const [accountMode, setAccountMode] = useState<AuthenticationMode | null>(
-    surface === 'identity' ? 'login' : null,
+    surface === 'identity' ? 'login' : requestedAccountMode,
   );
   const [openAICompatibleConfig, setOpenAICompatibleConfig] =
     useState(() => openAICompatibleConfigStore.load());
@@ -122,6 +135,7 @@ function StudentApplication() {
         online,
         store: courseStore,
       }}
+      initialView={requestedWorkbenchView}
       onLogin={() => {
         setAccountMode('login');
       }}
