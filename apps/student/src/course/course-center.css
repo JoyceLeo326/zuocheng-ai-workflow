@@ -499,6 +499,47 @@
   line-height: 1.5;
 }
 
+.course-center__certificate {
+  display: grid;
+  gap: 0.7rem;
+  margin-top: 0.85rem;
+}
+
+.course-center__certificate label {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.course-center__certificate label span {
+  color: #b9b6aa;
+  font-size: 0.76rem;
+  font-weight: 750;
+}
+
+.course-center__certificate input {
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0.65rem 0.72rem;
+  border: 1px solid #4a4d43;
+  border-radius: 0.55rem;
+  color: #f6f2e7;
+  background: #0d0e0c;
+}
+
+.course-center__certificate button {
+  min-height: 2.75rem;
+  border-color: #c9ff3f;
+  color: #10110f;
+  background: #c9ff3f;
+  font-weight: 850;
+}
+
+.course-center__certificate p {
+  margin: 0;
+  color: #c9ff3f;
+  font-size: 0.8rem;
+}
+
 .course-center__announcements time {
   display: block;
   margin-top: 0.6rem;

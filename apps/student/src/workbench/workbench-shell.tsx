@@ -11,10 +11,26 @@ import {
   AISettingsPanel,
   type AISettingsPanelProps,
 } from '../ai/ai-settings-panel.js';
+import type { WorkflowAssistant } from '../ai/workflow-assistant.js';
+import { WorkflowAssistantWorkspace } from '../ai/workflow-assistant-workspace.js';
+import {
+  AcquisitionPanel,
+  type OcrAcquisitionService,
+  type UrlAcquisitionService,
+} from '../acquisition/index.js';
+import {
+  ActivityPrivacyPanel,
+  type ProductEventLedger,
+} from '../analytics/index.js';
 import {
   CourseCenter,
   type CourseCenterProps,
 } from '../course/index.js';
+import { SyncCenter, type SyncCenterProps, type SyncLocalProjectOption } from '../sync/index.js';
+import {
+  ProjectTemplatePicker,
+  type ProjectTemplate,
+} from '../templates/index.js';
 import type { Artifact, Project } from './project-model.js';
 import {
   DraftStage,
@@ -66,9 +82,19 @@ export interface WorkbenchShellProps {
   onLogin(): void;
   onRegister(): void;
   aiSettings?: AISettingsPanelProps;
+  workflowAssistant?: WorkflowAssistant | undefined;
+  acquisition?: Readonly<{
+    ocrService: OcrAcquisitionService;
+    urlService: UrlAcquisitionService;
+  }>;
+  activityLedger?: ProductEventLedger;
   courseCenter?: Omit<
     CourseCenterProps,
     'projects' | 'onOpenProjects'
+  >;
+  syncCenter?: Omit<
+    SyncCenterProps,
+    'localProjects' | 'onLocalChange'
   >;
   service?: WorkbenchProjectLifecycleService;
   initialDraft?: WorkbenchDraft;
@@ -77,7 +103,15 @@ export interface WorkbenchShellProps {
   initialView?: WorkbenchView;
 }
 
-export type WorkbenchView = 'workbench' | 'projects' | 'courses';
+export type WorkbenchView =
+  | 'workbench'
+  | 'projects'
+  | 'courses'
+  | 'templates'
+  | 'sync'
+  | 'assistant'
+  | 'acquisition'
+  | 'activity';
 
 export type WorkbenchViewState = Readonly<{
   activeStage: number;
@@ -258,6 +292,84 @@ function draftFromProject(project: Project): WorkbenchDraft {
       .join('\n'),
     requiredContent: task.mustInclude.join('\n'),
     forbiddenContent: task.mustAvoid.join('\n'),
+  };
+}
+
+function rubricFormFromProject(
+  project: Project,
+): WorkbenchProjectFormInput['rubric'] {
+  return project.taskDefinition.rubric.map((criterion) => ({
+    title: criterion.title,
+    description: criterion.description,
+    weightPercent: criterion.weightPercent,
+  }));
+}
+
+function projectFormFromDraft(
+  draft: WorkbenchDraft,
+  preparedRubric: WorkbenchProjectFormInput['rubric'] | null,
+): WorkbenchProjectFormInput | null {
+  if (draft.outputFormat === '') {
+    return null;
+  }
+  return {
+    projectTitle: draft.taskName.trim(),
+    taskName: draft.taskName.trim(),
+    audience: draft.audience.trim(),
+    deadline: draft.deadline,
+    scope: draft.scope.trim(),
+    durationMinutes: draft.durationMinutes.trim(),
+    outputFormat: draft.outputFormat,
+    tone: draft.tone || 'concise',
+    rubric:
+      preparedRubric === null
+        ? [
+            {
+              title: '评分标准',
+              description: draft.rubric.trim(),
+              weightPercent: 100,
+            },
+          ]
+        : preparedRubric,
+    requiredContent: draft.requiredContent,
+    forbiddenContent: draft.forbiddenContent,
+  };
+}
+
+function projectDefinitionFingerprint(
+  input: WorkbenchProjectFormInput,
+): string {
+  return JSON.stringify(input);
+}
+
+function draftFromTemplateForm(
+  form: WorkbenchProjectFormInput,
+): WorkbenchDraft {
+  return {
+    taskName: form.taskName,
+    audience: form.audience,
+    deadline: form.deadline,
+    scope: form.scope,
+    durationMinutes: form.durationMinutes,
+    outputFormat: form.outputFormat,
+    tone: form.tone,
+    rubric: form.rubric
+      .map(
+        (criterion) =>
+          `${criterion.title}（${String(criterion.weightPercent)}%）：${criterion.description}`,
+      )
+      .join('\n'),
+    requiredContent: form.requiredContent,
+    forbiddenContent: form.forbiddenContent,
+  };
+}
+
+function syncProjectOption(project: Project): SyncLocalProjectOption {
+  return {
+    id: project.id,
+    title: project.title,
+    version: project.version,
+    updatedAt: project.updatedAt,
   };
 }
 
@@ -680,7 +792,11 @@ export function WorkbenchShell({
   onLogin,
   onRegister,
   aiSettings,
+  workflowAssistant,
+  acquisition,
+  activityLedger,
   courseCenter,
+  syncCenter,
   service,
   initialDraft,
   initialMaterials = [],
@@ -723,15 +839,42 @@ export function WorkbenchShell({
       : [mapManagedProject(initialProject)],
   );
   const [projectManagerError, setProjectManagerError] = useState('');
+  const [syncProjects, setSyncProjects] = useState<
+    readonly SyncLocalProjectOption[]
+  >(
+    initialProject === undefined
+      ? []
+      : [syncProjectOption(initialProject)],
+  );
+  const [preparedRubric, setPreparedRubric] = useState<
+    WorkbenchProjectFormInput['rubric'] | null
+  >(initialProject === undefined ? null : rubricFormFromProject(initialProject));
   const [draftPreparationPhase, setDraftPreparationPhase] =
     useState<DraftPreparationPhase>('idle');
   const [draftPreparationMessage, setDraftPreparationMessage] =
     useState('');
   const aiSettingsButtonRef = useRef<HTMLButtonElement>(null);
+  const autoSaveInFlightRef = useRef(false);
+  const lastDefinitionFingerprintRef = useRef<string | null>(
+    initialProject === undefined
+      ? null
+      : projectDefinitionFingerprint({
+          ...projectFormFromDraft(
+            draftFromProject(initialProject),
+            rubricFormFromProject(initialProject),
+          )!,
+        }),
+  );
 
   const restoreProjectState = useCallback((next: Project) => {
+    const nextDraft = draftFromProject(next);
+    const nextRubric = rubricFormFromProject(next);
     setProject(next);
-    setDraft(draftFromProject(next));
+    setDraft(nextDraft);
+    setPreparedRubric(nextRubric);
+    const nextInput = projectFormFromDraft(nextDraft, nextRubric);
+    lastDefinitionFingerprintRef.current =
+      nextInput === null ? null : projectDefinitionFingerprint(nextInput);
     setMaterials([]);
     setMaterialProgress({});
     setSavePhase('saved');
@@ -752,6 +895,8 @@ export function WorkbenchShell({
       ...emptyWorkbenchDraft,
       taskName: title,
     });
+    setPreparedRubric(null);
+    lastDefinitionFingerprintRef.current = null;
     setMaterials([]);
     setMaterialProgress({});
     setSavePhase('idle');
@@ -796,6 +941,7 @@ export function WorkbenchShell({
           return;
         }
         setManagedProjects(projects.map(mapManagedProject));
+        setSyncProjects(projects.map(syncProjectOption));
         if (initialProject !== undefined) {
           return;
         }
@@ -823,6 +969,7 @@ export function WorkbenchShell({
     }
     const projects = await service.listProjects();
     setManagedProjects(projects.map(mapManagedProject));
+    setSyncProjects(projects.map(syncProjectOption));
     if (project === null) {
       return;
     }
@@ -921,10 +1068,119 @@ export function WorkbenchShell({
         .listProjects()
         .then((projects) => {
           setManagedProjects(projects.map(mapManagedProject));
+          setSyncProjects(projects.map(syncProjectOption));
         })
         .catch(() => {
           // Course content remains available when projects cannot refresh.
         });
+    }
+  };
+
+  const showTemplatePicker = () => {
+    setViewState((current) =>
+      workbenchViewReducer(current, {
+        type: 'close-ai-settings',
+      }),
+    );
+    setView('templates');
+  };
+
+  const showSyncCenter = () => {
+    if (syncCenter === undefined) {
+      return;
+    }
+    setViewState((current) =>
+      workbenchViewReducer(current, {
+        type: 'close-ai-settings',
+      }),
+    );
+    setView('sync');
+    if (service !== undefined) {
+      void service
+        .listProjects()
+        .then((projects) => {
+          setManagedProjects(projects.map(mapManagedProject));
+          setSyncProjects(projects.map(syncProjectOption));
+        })
+        .catch(() => {
+          // The sync center preserves its current list when refresh fails.
+        });
+    }
+  };
+
+  const showWorkflowAssistant = () => {
+    setViewState((current) =>
+      workbenchViewReducer(current, {
+        type: 'close-ai-settings',
+      }),
+    );
+    setView('assistant');
+  };
+
+  const showAcquisition = () => {
+    if (
+      acquisition === undefined ||
+      project === null ||
+      service?.ingestAcquiredMaterial === undefined
+    ) {
+      return;
+    }
+    setViewState((current) =>
+      workbenchViewReducer(current, {
+        type: 'close-ai-settings',
+      }),
+    );
+    setView('acquisition');
+  };
+
+  const showActivity = () => {
+    if (activityLedger === undefined) {
+      return;
+    }
+    setViewState((current) =>
+      workbenchViewReducer(current, {
+        type: 'close-ai-settings',
+      }),
+    );
+    setView('activity');
+  };
+
+  const applyTemplate = (
+    _template: ProjectTemplate,
+    form: WorkbenchProjectFormInput,
+  ) => {
+    setProject(null);
+    setDraft(draftFromTemplateForm(form));
+    setPreparedRubric(form.rubric);
+    setMaterials([]);
+    setMaterialProgress({});
+    setSavePhase('idle');
+    setSaveMessage('');
+    setViewState((current) =>
+      workbenchViewReducer(current, {
+        type: 'set-stage',
+        stage: 0,
+      }),
+    );
+    setDraftPreparationPhase('idle');
+    setDraftPreparationMessage('');
+    setView('workbench');
+  };
+
+  const refreshLocalProjects = async () => {
+    if (service === undefined) {
+      return;
+    }
+    const projects = await service.listProjects();
+    setManagedProjects(projects.map(mapManagedProject));
+    setSyncProjects(projects.map(syncProjectOption));
+    if (project !== null) {
+      const current = projects.find(
+        (candidate) => candidate.id === project.id,
+      );
+      if (current !== undefined) {
+        restoreProjectState(current);
+      }
     }
   };
 
@@ -937,6 +1193,67 @@ export function WorkbenchShell({
     service !== undefined &&
     missingFields.length === 0 &&
     savePhase !== 'saving';
+  const projectFormInput = useMemo(
+    () => projectFormFromDraft(draft, preparedRubric),
+    [draft, preparedRubric],
+  );
+  useEffect(() => {
+    if (
+      activeStage !== 0 ||
+      project === null ||
+      service?.updateProjectDefinition === undefined ||
+      projectFormInput === null ||
+      missingFields.length > 0 ||
+      savePhase === 'saving'
+    ) {
+      return;
+    }
+    const fingerprint = projectDefinitionFingerprint(projectFormInput);
+    if (fingerprint === lastDefinitionFingerprintRef.current) {
+      return;
+    }
+    const timeoutId = window.setTimeout(() => {
+      if (autoSaveInFlightRef.current) {
+        return;
+      }
+      autoSaveInFlightRef.current = true;
+      setSavePhase('saving');
+      setSaveMessage('正在自动保存修改…');
+      void service
+        .updateProjectDefinition!(project.id, projectFormInput)
+        .then((next) => {
+          lastDefinitionFingerprintRef.current = fingerprint;
+          setProject(next);
+          setManagedProjects((current) => [
+            mapManagedProject(next),
+            ...current.filter((candidate) => candidate.id !== next.id),
+          ]);
+          setSyncProjects((current) => [
+            syncProjectOption(next),
+            ...current.filter((candidate) => candidate.id !== next.id),
+          ]);
+          setSavePhase('saved');
+          setSaveMessage('修改已自动保存');
+        })
+        .catch((reason: unknown) => {
+          setSavePhase('failed');
+          setSaveMessage(errorMessage(reason));
+        })
+        .finally(() => {
+          autoSaveInFlightRef.current = false;
+        });
+    }, 800);
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [
+    activeStage,
+    missingFields.length,
+    project,
+    projectFormInput,
+    savePhase,
+    service,
+  ]);
   const outlineStageCallbacks =
     service === undefined || project === null
       ? null
@@ -1034,9 +1351,12 @@ export function WorkbenchShell({
       ...current,
       [field]: value,
     }));
-    if (savePhase !== 'idle') {
+    if (field === 'rubric') {
+      setPreparedRubric(null);
+    }
+    if (savePhase !== 'idle' && savePhase !== 'saving') {
       setSavePhase('idle');
-      setSaveMessage('');
+      setSaveMessage(project === null ? '' : '有未保存的修改');
     }
   };
 
@@ -1049,33 +1369,27 @@ export function WorkbenchShell({
 
   const handleSave = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const outputFormat = draft.outputFormat;
-    if (!canSave || service === undefined || outputFormat === '') {
+    if (!canSave || service === undefined || projectFormInput === null) {
       return;
     }
 
     setSavePhase('saving');
     setSaveMessage('正在保存任务并处理材料…');
     try {
-      let currentProject = await service.createProject({
-        projectTitle: draft.taskName.trim(),
-        taskName: draft.taskName.trim(),
-        audience: draft.audience.trim(),
-        deadline: draft.deadline,
-        scope: draft.scope.trim(),
-        durationMinutes: draft.durationMinutes.trim(),
-        outputFormat,
-        tone: draft.tone || 'concise',
-        rubric: [
-          {
-            title: '评分标准',
-            description: draft.rubric.trim(),
-            weightPercent: 100,
-          },
-        ],
-        requiredContent: draft.requiredContent,
-        forbiddenContent: draft.forbiddenContent,
-      });
+      let currentProject: Project;
+      if (project === null) {
+        currentProject = await service.createProject(projectFormInput);
+      } else {
+        if (service.updateProjectDefinition === undefined) {
+          throw new Error('当前工作区不支持修改任务定义。');
+        }
+        currentProject = await service.updateProjectDefinition(
+          project.id,
+          projectFormInput,
+        );
+      }
+      lastDefinitionFingerprintRef.current =
+        projectDefinitionFingerprint(projectFormInput);
       setProject(currentProject);
 
       let failedCount = 0;
@@ -1123,6 +1437,9 @@ export function WorkbenchShell({
           ? '任务与材料已保存'
           : `${String(failedCount)} 个材料需要处理`,
       );
+      const projects = await service.listProjects();
+      setManagedProjects(projects.map(mapManagedProject));
+      setSyncProjects(projects.map(syncProjectOption));
       setViewState((current) =>
         workbenchViewReducer(current, {
           type: 'set-stage',
@@ -1147,6 +1464,16 @@ export function WorkbenchShell({
           <span>
             {aiSettingsOpen
               ? '连接模型'
+              : view === 'activity'
+                ? '设置'
+              : view === 'acquisition'
+                ? '添加材料'
+              : view === 'assistant'
+                ? 'AI 助手'
+              : view === 'templates'
+                ? '新建项目'
+                : view === 'sync'
+                  ? '项目同步'
               : view === 'courses'
                 ? '课程中心'
                 : view === 'projects'
@@ -1157,6 +1484,16 @@ export function WorkbenchShell({
           <strong>
             {aiSettingsOpen
               ? '模型设置'
+              : view === 'activity'
+                ? '活动记录与隐私'
+              : view === 'acquisition'
+                ? '扫描件与网页'
+              : view === 'assistant'
+                ? '审核并应用候选'
+              : view === 'templates'
+                ? '选择模板'
+                : view === 'sync'
+                  ? '跨设备继续'
               : view === 'courses'
                 ? '7 天完成一份作品'
                 : view === 'projects'
@@ -1169,18 +1506,44 @@ export function WorkbenchShell({
           {courseCenter === undefined ? null : (
             <button
               aria-current={view === 'courses' ? 'page' : undefined}
-              className="button button--quiet button--compact"
+              className="button button--quiet button--compact workbench-secondary"
               onClick={showCourseCenter}
               type="button"
             >
               课程
             </button>
           )}
+          <button
+            aria-current={view === 'templates' ? 'page' : undefined}
+            className="button button--quiet button--compact workbench-secondary"
+            onClick={showTemplatePicker}
+            type="button"
+          >
+            新建
+          </button>
+          {syncCenter === undefined ? null : (
+            <button
+              aria-current={view === 'sync' ? 'page' : undefined}
+              className="button button--quiet button--compact workbench-secondary"
+              onClick={showSyncCenter}
+              type="button"
+            >
+              同步
+            </button>
+          )}
+          <button
+            aria-current={view === 'assistant' ? 'page' : undefined}
+            className="button button--quiet button--compact workbench-secondary"
+            onClick={showWorkflowAssistant}
+            type="button"
+          >
+            AI 助手
+          </button>
           {aiSettings === undefined ? null : (
             <button
               aria-controls="workbench-ai-settings"
               aria-expanded={aiSettingsOpen}
-              className="button button--quiet button--compact"
+              className="button button--quiet button--compact workbench-secondary"
               onClick={() => {
                 setViewState((current) =>
                   workbenchViewReducer(current, {
@@ -1198,13 +1561,70 @@ export function WorkbenchShell({
           )}
           <button
             aria-current={view === 'projects' ? 'page' : undefined}
-            className="button button--quiet button--compact"
+            className="button button--quiet button--compact workbench-secondary"
             disabled={projectManagerController === null}
             onClick={showProjectManager}
             type="button"
           >
             项目
           </button>
+          <details className="workbench-more">
+            <summary>更多</summary>
+            <div>
+              {courseCenter === undefined ? null : (
+                <button onClick={showCourseCenter} type="button">
+                  课程
+                </button>
+              )}
+              <button onClick={showTemplatePicker} type="button">
+                新建项目
+              </button>
+              {syncCenter === undefined ? null : (
+                <button onClick={showSyncCenter} type="button">
+                  项目同步
+                </button>
+              )}
+              <button onClick={showWorkflowAssistant} type="button">
+                AI 助手
+              </button>
+              {aiSettings === undefined ? null : (
+                <button
+                  onClick={() => {
+                    setViewState((current) =>
+                      workbenchViewReducer(current, {
+                        type: 'open-ai-settings',
+                      }),
+                    );
+                  }}
+                  type="button"
+                >
+                  连接模型
+                </button>
+              )}
+              <button
+                disabled={projectManagerController === null}
+                onClick={showProjectManager}
+                type="button"
+              >
+                项目管理
+              </button>
+              {activityLedger === undefined ? null : (
+                <button onClick={showActivity} type="button">
+                  活动记录与隐私
+                </button>
+              )}
+            </div>
+          </details>
+          {activityLedger === undefined ? null : (
+            <button
+              aria-current={view === 'activity' ? 'page' : undefined}
+              className="button button--quiet button--compact workbench-secondary"
+              onClick={showActivity}
+              type="button"
+            >
+              记录
+            </button>
+          )}
           <button
             className="button button--quiet button--compact"
             onClick={onLogin}
@@ -1246,6 +1666,131 @@ export function WorkbenchShell({
             </button>
           </div>
           <AISettingsPanel {...aiSettings} />
+        </section>
+      ) : view === 'activity' && activityLedger !== undefined ? (
+        <section className="workbench-utility-view">
+          <div className="workbench-utility-view__toolbar">
+            <button
+              className="button button--quiet"
+              onClick={() => setView('workbench')}
+              type="button"
+            >
+              返回当前项目
+            </button>
+          </div>
+          <ActivityPrivacyPanel ledger={activityLedger} />
+        </section>
+      ) : view === 'acquisition' &&
+        acquisition !== undefined &&
+        project !== null &&
+        service?.ingestAcquiredMaterial !== undefined ? (
+        <section className="workbench-utility-view">
+          <div className="workbench-utility-view__toolbar">
+            <button
+              className="button button--quiet"
+              onClick={() => {
+                setViewState((current) =>
+                  workbenchViewReducer(current, {
+                    type: 'set-stage',
+                    stage: 1,
+                  }),
+                );
+                setView('workbench');
+              }}
+              type="button"
+            >
+              返回材料管理
+            </button>
+          </div>
+          <AcquisitionPanel
+            ocrService={acquisition.ocrService}
+            onAcquired={async (result, originalFile) => {
+              const ingested =
+                await service.ingestAcquiredMaterial!(
+                  project.id,
+                  result,
+                  originalFile,
+                );
+              setProject(ingested.project);
+              setSavePhase(
+                ingested.status === 'failed' ? 'failed' : 'saved',
+              );
+              setSaveMessage(
+                ingested.status === 'duplicate'
+                  ? '此材料已在当前项目中'
+                  : ingested.status === 'failed'
+                    ? '材料未能解析，请检查后重试'
+                    : `${String(ingested.chunks.length)} 个片段已加入项目`,
+              );
+              const projects = await service.listProjects();
+              setManagedProjects(projects.map(mapManagedProject));
+              setSyncProjects(projects.map(syncProjectOption));
+            }}
+            urlService={acquisition.urlService}
+          />
+        </section>
+      ) : view === 'assistant' ? (
+        <section className="workbench-utility-view">
+          <div className="workbench-utility-view__toolbar">
+            <button
+              className="button button--quiet"
+              onClick={() => setView('workbench')}
+              type="button"
+            >
+              {project === null ? '返回任务编辑' : '返回当前项目'}
+            </button>
+          </div>
+          <WorkflowAssistantWorkspace
+            assistant={workflowAssistant}
+            onOpenSettings={() => {
+              setViewState((current) =>
+                workbenchViewReducer(current, {
+                  type: 'open-ai-settings',
+                }),
+              );
+            }}
+            onProjectChange={restoreProjectState}
+            onReturnToWorkbench={() => setView('workbench')}
+            project={project}
+            service={service}
+          />
+        </section>
+      ) : view === 'templates' ? (
+        <section className="workbench-utility-view">
+          <div className="workbench-utility-view__toolbar">
+            <button
+              className="button button--quiet"
+              onClick={() => setView('workbench')}
+              type="button"
+            >
+              {project === null ? '返回任务编辑' : '返回当前项目'}
+            </button>
+          </div>
+          <ProjectTemplatePicker
+            onCancel={() => setView('workbench')}
+            onConfirm={applyTemplate}
+          />
+        </section>
+      ) : view === 'sync' && syncCenter !== undefined ? (
+        <section className="workbench-utility-view">
+          <div className="workbench-utility-view__toolbar">
+            <button
+              className="button button--quiet"
+              onClick={() => {
+                void refreshLocalProjects()
+                  .catch(() => undefined)
+                  .finally(() => setView('workbench'));
+              }}
+              type="button"
+            >
+              {project === null ? '返回任务编辑' : '返回当前项目'}
+            </button>
+          </div>
+          <SyncCenter
+            {...syncCenter}
+            localProjects={syncProjects}
+            onLocalChange={refreshLocalProjects}
+          />
         </section>
       ) : view === 'courses' && courseCenter !== undefined ? (
         <section className="workbench-course-center">
@@ -1373,13 +1918,27 @@ export function WorkbenchShell({
                   : '逐项检查解析结果，并从真实页码与原文中继续选择证据。'}
               </p>
             </div>
-            <span className="status-pill">
-              {activeStage === 0
-                ? savePhase === 'saving'
-                  ? '保存中'
-                  : '填写中'
-                : `${String(project?.sourceChunks.length ?? 0)} 个片段`}
-            </span>
+            <div className="workbench-section-header__actions">
+              <span className="status-pill">
+                {activeStage === 0
+                  ? savePhase === 'saving'
+                    ? '保存中'
+                    : '填写中'
+                  : `${String(project?.sourceChunks.length ?? 0)} 个片段`}
+              </span>
+              {activeStage === 1 &&
+              acquisition !== undefined &&
+              project !== null &&
+              service?.ingestAcquiredMaterial !== undefined ? (
+                <button
+                  className="button button--compact"
+                  onClick={showAcquisition}
+                  type="button"
+                >
+                  扫描件 / 网页
+                </button>
+              ) : null}
+            </div>
           </header>
           ) : null}
 
@@ -1760,12 +2319,20 @@ export function WorkbenchShell({
               <div aria-live="polite">
                 <strong>
                   {missingFields.length === 0
-                    ? '可以保存任务'
+                    ? project === null
+                      ? '可以创建任务'
+                      : savePhase === 'saving'
+                        ? '正在保存修改'
+                        : savePhase === 'saved'
+                          ? '修改已保存'
+                          : '可以继续'
                     : '还缺少必填信息'}
                 </strong>
                 <span>
                   {missingFields.length === 0
-                    ? '保存后将逐项解析材料。'
+                    ? project === null
+                      ? '创建后将逐项解析材料。'
+                      : saveMessage || '修改会自动保存。'
                     : `请补充：${missingFields.join('、')}。`}
                 </span>
               </div>
@@ -1776,11 +2343,17 @@ export function WorkbenchShell({
                 form="task-definition-form"
                 type="submit"
               >
-                {savePhase === 'saving' ? '正在处理…' : '保存并继续'}
+                {savePhase === 'saving'
+                  ? '正在处理…'
+                  : project === null
+                    ? '创建并继续'
+                    : '保存并继续'}
               </button>
               <span className="sr-only" id="save-task-requirement">
                 {missingFields.length === 0
-                  ? '保存任务并处理材料'
+                  ? project === null
+                    ? '创建任务并处理材料'
+                    : '保存任务修改并继续'
                   : `请先补充${missingFields.join('、')}`}
               </span>
             </footer>

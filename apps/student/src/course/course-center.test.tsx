@@ -34,6 +34,7 @@ function callbacks(): CourseCenterViewCallbacks {
     onUpdateLesson: vi.fn().mockResolvedValue(undefined),
     onSubmitAssignment: vi.fn().mockResolvedValue(undefined),
     onResubmitAssignment: vi.fn().mockResolvedValue(undefined),
+    onExportCertificate: vi.fn().mockResolvedValue(undefined),
     onOpenProjects: vi.fn().mockResolvedValue(undefined),
     onRefresh: vi.fn().mockResolvedValue(undefined),
   };

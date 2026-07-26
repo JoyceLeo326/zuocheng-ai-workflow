@@ -562,6 +562,49 @@ describe('MemoryProjectStore contract', () => {
     ).rejects.toThrow(/sourceChunks/u);
   });
 
+  it('replaces a synchronized project only at the observed version and keeps the bundle complete', async () => {
+    const remote = new MemoryProjectStore();
+    await remote.createProject(project());
+    await remote.putSourceBlob(
+      PROJECT_ID,
+      FILE_ID,
+      new Blob(['world']),
+    );
+    await remote.replaceSourceChunks(
+      PROJECT_ID,
+      FILE_ID,
+      [chunk()],
+      1,
+      NEXT_UPDATED_AT,
+    );
+    await remote.appendEdit(edit());
+    const bundle = await remote.exportProject(PROJECT_ID, EXPORT_AT);
+
+    const local = new MemoryProjectStore();
+    await local.createProject(project());
+    await expect(
+      local.replaceProject(bundle, 99),
+    ).rejects.toBeInstanceOf(ProjectVersionConflictError);
+    await expect(local.getProject(PROJECT_ID)).resolves.toEqual(
+      project(),
+    );
+
+    await expect(local.replaceProject(bundle, 1)).resolves.toEqual(
+      projectWithChunks(),
+    );
+    expect(
+      await blobText(
+        await local.getSourceBlob(PROJECT_ID, FILE_ID),
+      ),
+    ).toBe('world');
+    await expect(
+      local.getSourceChunks(PROJECT_ID, FILE_ID),
+    ).resolves.toEqual([chunk()]);
+    await expect(local.listEdits(PROJECT_ID)).resolves.toEqual([
+      edit(),
+    ]);
+  });
+
   it('reports unavailable IndexedDB instead of falling back to volatile storage', () => {
     expect(() =>
       createIndexedDbProjectStore({ indexedDBFactory: null }),

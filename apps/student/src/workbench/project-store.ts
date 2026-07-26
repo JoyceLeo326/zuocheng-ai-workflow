@@ -93,6 +93,10 @@ export interface ProjectStore {
     exportedAt?: IsoDateTime,
   ): Promise<ProjectExportBundle>;
   importProject(bundle: unknown): Promise<Project>;
+  replaceProject(
+    bundle: unknown,
+    expectedVersion: number,
+  ): Promise<Project>;
   close(): void;
 }
 
@@ -1021,6 +1025,68 @@ export class MemoryProjectStore implements ProjectStore {
     return clone(bundle.project);
   }
 
+  async replaceProject(
+    input: unknown,
+    expectedVersion: number,
+  ): Promise<Project> {
+    const bundle = parseBundle(input);
+    const current = this.#database.projects.get(bundle.project.id);
+    if (current === undefined) {
+      throw new ProjectNotFoundError(bundle.project.id);
+    }
+    if (current.version !== expectedVersion) {
+      throw new ProjectVersionConflictError(
+        bundle.project.id,
+        expectedVersion,
+        current.version,
+      );
+    }
+    this.#assertChunkIdsAvailable(bundle.project);
+    const importedEditIds = new Set(
+      bundle.editHistory.map((edit) => edit.id),
+    );
+    for (const edit of this.#database.edits.values()) {
+      if (
+        importedEditIds.has(edit.id) &&
+        edit.projectId !== bundle.project.id
+      ) {
+        throw new ProjectStoreError(
+          'import edit identity conflicts with another project',
+        );
+      }
+    }
+    for (const key of [...this.#database.sourceBlobs.keys()]) {
+      if (key.startsWith(`${bundle.project.id}:`)) {
+        this.#database.sourceBlobs.delete(key);
+      }
+    }
+    for (const [chunkId, chunk] of this.#database.sourceChunks) {
+      if (chunk.projectId === bundle.project.id) {
+        this.#database.sourceChunks.delete(chunkId);
+      }
+    }
+    for (const [editId, edit] of this.#database.edits) {
+      if (edit.projectId === bundle.project.id) {
+        this.#database.edits.delete(editId);
+      }
+    }
+    this.#database.projects.set(
+      bundle.project.id,
+      clone(bundle.project),
+    );
+    for (const entry of bundle.sourceBlobs) {
+      this.#database.sourceBlobs.set(
+        blobKey(bundle.project.id, entry.sourceFileId),
+        clone(entry.blob),
+      );
+    }
+    this.#writeProjectChunks(bundle.project);
+    for (const edit of bundle.editHistory) {
+      this.#database.edits.set(edit.id, clone(edit));
+    }
+    return clone(bundle.project);
+  }
+
   close(): void {}
 
   async #requireProject(projectId: EntityId): Promise<Project> {
@@ -1658,6 +1724,76 @@ export class IndexedDbProjectStore implements ProjectStore {
       chunks.add(clone(chunk));
     }
     const edits = transaction.objectStore(EDITS_STORE);
+    for (const edit of bundle.editHistory) {
+      edits.add(clone(edit));
+    }
+    await transactionDone(transaction);
+    return clone(bundle.project);
+  }
+
+  async replaceProject(
+    input: unknown,
+    expectedVersion: number,
+  ): Promise<Project> {
+    const bundle = parseBundle(input);
+    const database = await this.#database();
+    const transaction = database.transaction(
+      [PROJECTS_STORE, BLOBS_STORE, CHUNKS_STORE, EDITS_STORE],
+      'readwrite',
+    );
+    const projects = transaction.objectStore(PROJECTS_STORE);
+    const currentValue = (await requestResult(
+      projects.get(bundle.project.id),
+    )) as Project | undefined;
+    if (currentValue === undefined) {
+      transaction.abort();
+      throw new ProjectNotFoundError(bundle.project.id);
+    }
+    const current = parseProject(currentValue);
+    if (current.version !== expectedVersion) {
+      transaction.abort();
+      throw new ProjectVersionConflictError(
+        bundle.project.id,
+        expectedVersion,
+        current.version,
+      );
+    }
+
+    const blobs = transaction.objectStore(BLOBS_STORE);
+    const blobKeys = await requestResult(
+      blobs.index(PROJECT_ID_INDEX).getAllKeys(bundle.project.id),
+    );
+    const chunks = transaction.objectStore(CHUNKS_STORE);
+    const chunkKeys = await requestResult(
+      chunks.index(PROJECT_ID_INDEX).getAllKeys(bundle.project.id),
+    );
+    const edits = transaction.objectStore(EDITS_STORE);
+    const editKeys = await requestResult(
+      edits.index(PROJECT_ID_INDEX).getAllKeys(bundle.project.id),
+    );
+    for (const key of blobKeys) {
+      blobs.delete(key);
+    }
+    for (const key of chunkKeys) {
+      chunks.delete(key);
+    }
+    for (const key of editKeys) {
+      edits.delete(key);
+    }
+
+    projects.put(clone(bundle.project));
+    for (const entry of bundle.sourceBlobs) {
+      const stored: StoredBlob = {
+        key: blobKey(bundle.project.id, entry.sourceFileId),
+        projectId: bundle.project.id,
+        sourceFileId: entry.sourceFileId,
+        blob: clone(entry.blob),
+      };
+      blobs.add(stored);
+    }
+    for (const chunk of bundle.sourceChunks) {
+      chunks.add(clone(chunk));
+    }
     for (const edit of bundle.editHistory) {
       edits.add(clone(edit));
     }
