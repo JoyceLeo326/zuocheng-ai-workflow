@@ -6,11 +6,15 @@ import {
   type PdfParserPort,
 } from './source-file.js';
 import {
+  DraftArtifactPayloadError,
   WorkbenchServiceInputError,
   createWorkbenchService,
+  parseDraftArtifactPayload,
+  readDraftArtifactPayload,
   type WorkbenchProjectFormInput,
   type WorkbenchService,
 } from './workbench-service.js';
+import type { DraftPage } from './draft-verification.js';
 
 const UUID_V7 =
   /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-8[0-9a-f]{3}-[0-9a-f]{12}$/u;
@@ -138,6 +142,83 @@ async function serviceWithVerifiedEvidence(): Promise<{
     service,
     projectId: initial.id,
     evidenceId: withEvidence.evidenceCards[0]!.id,
+  };
+}
+
+async function serviceWithSelectedOutline(): Promise<{
+  store: MemoryProjectStore;
+  service: WorkbenchService;
+  projectId: string;
+  evidenceId: string;
+  outlineId: string;
+  outlineNodeId: string;
+  rubricCriterionIds: string[];
+}> {
+  const { store, service, projectId, evidenceId } =
+    await serviceWithVerifiedEvidence();
+  const current = await store.getProject(projectId);
+  if (current === null) {
+    throw new Error('expected project');
+  }
+  const outlineProject = await service.createOutline(projectId, {
+    title: 'Selected authored structure',
+    nodes: [
+      {
+        title: 'Core conclusion',
+        conclusion: 'Alpha supports the core conclusion.',
+        evidenceCardIds: [evidenceId],
+        coveredRequirements: [
+          ...current.taskDefinition.mustInclude,
+        ],
+        rubricCriterionIds: current.taskDefinition.rubric.map(
+          (criterion) => criterion.id,
+        ),
+      },
+    ],
+  });
+  const outline = outlineProject.outlines[0]!;
+  await service.selectOutline(projectId, outline.id);
+  return {
+    store,
+    service,
+    projectId,
+    evidenceId,
+    outlineId: outline.id,
+    outlineNodeId: outline.nodes[0]!.id,
+    rubricCriterionIds: current.taskDefinition.rubric.map(
+      (criterion) => criterion.id,
+    ),
+  };
+}
+
+function authoredDraftPage(
+  evidenceId: string,
+  rubricCriterionIds: readonly string[],
+  suffix = 'one',
+): Omit<DraftPage, 'id' | 'locked'> {
+  return {
+    title: `核心结论 ${suffix}`,
+    conclusion: '核心结论由 Alpha 证据支持。',
+    body: '来源索引清楚列出全部引用。',
+    evidenceCardIds: [evidenceId],
+    citations: [
+      {
+        evidenceCardId: evidenceId,
+        label: '[1]',
+      },
+    ],
+    visualNote: '使用简洁证据图。',
+    speakerNotes: '说明 Alpha 与核心结论的关系。',
+    estimatedSeconds: 480,
+    rubricCriterionIds: [...rubricCriterionIds],
+    claims: [
+      {
+        id: `claim-${suffix}`,
+        text: `Alpha supports the conclusion ${suffix}.`,
+        evidenceCardIds: [evidenceId],
+        numericFacts: [],
+      },
+    ],
   };
 }
 
@@ -800,6 +881,363 @@ describe('WorkbenchService first-stage orchestration', () => {
     await expect(store.getProject(projectId)).resolves.toEqual(emptyDraft);
     expect(emptyDraft.outlines).toHaveLength(1);
     expect(emptyDraft.outlines[0]!.nodes).toEqual([]);
+  });
+
+  it('ensures one strict empty draft artifact without inventing page content', async () => {
+    const { store, service, projectId, outlineId } =
+      await serviceWithSelectedOutline();
+    const saveSpy = vi.spyOn(store, 'saveProject');
+
+    const created = await service.ensureDraftArtifact(
+      projectId,
+      outlineId,
+    );
+    const artifact = created.artifacts[0]!;
+    expect(artifact).toMatchObject({
+      version: 1,
+      projectId,
+      outlineId,
+      kind: 'presentation',
+      status: 'draft',
+      blobId: null,
+      contentSha256: null,
+      staleBecause: [],
+      errorCode: null,
+    });
+    expect(readDraftArtifactPayload(artifact)).toEqual({
+      format: 'zuocheng-draft-artifact',
+      formatVersion: 1,
+      id: artifact.id,
+      version: 1,
+      createdAt: artifact.createdAt,
+      updatedAt: artifact.updatedAt,
+      pages: [],
+    });
+    expect(() =>
+      parseDraftArtifactPayload({
+        ...readDraftArtifactPayload(artifact),
+        inventedPage: true,
+      }),
+    ).toThrow(DraftArtifactPayloadError);
+
+    const idempotent = await service.ensureDraftArtifact(
+      projectId,
+      outlineId,
+    );
+    expect(idempotent).toEqual(created);
+    expect(saveSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('persists deterministic draft page mutations and rejects writes to locked pages', async () => {
+    const {
+      store,
+      service,
+      projectId,
+      evidenceId,
+      outlineId,
+      outlineNodeId,
+      rubricCriterionIds,
+    } = await serviceWithSelectedOutline();
+    const withArtifact = await service.ensureDraftArtifact(
+      projectId,
+      outlineId,
+    );
+    const artifactId = withArtifact.artifacts[0]!.id;
+    const saveSpy = vi.spyOn(store, 'saveProject');
+
+    const firstInsert = await service.insertDraftPage(
+      projectId,
+      artifactId,
+      {
+        outlineNodeId,
+        index: 0,
+        page: authoredDraftPage(
+          evidenceId,
+          rubricCriterionIds,
+        ),
+      },
+    );
+    const firstPayload = readDraftArtifactPayload(
+      firstInsert.artifacts[0]!,
+    );
+    const firstPageId = firstPayload.pages[0]!.id;
+    expect(firstPayload.pages[0]).toMatchObject({
+      id: firstPageId,
+      version: 1,
+      outlineNodeId,
+      page: {
+        id: firstPageId,
+        locked: false,
+        title: '核心结论 one',
+        evidenceCardIds: [evidenceId],
+        rubricCriterionIds,
+      },
+    });
+
+    const secondInsert = await service.insertDraftPage(
+      projectId,
+      artifactId,
+      {
+        outlineNodeId,
+        index: 1,
+        page: authoredDraftPage(
+          evidenceId,
+          rubricCriterionIds,
+          'two',
+        ),
+      },
+    );
+    const secondPayload = readDraftArtifactPayload(
+      secondInsert.artifacts[0]!,
+    );
+    const secondPageId = secondPayload.pages[1]!.id;
+    const updated = await service.updateDraftPage(
+      projectId,
+      artifactId,
+      firstPageId,
+      {
+        body: '更新后的来源索引仍来自用户输入。',
+      },
+    );
+    expect(
+      readDraftArtifactPayload(updated.artifacts[0]!).pages[0],
+    ).toMatchObject({
+      id: firstPageId,
+      version: 2,
+      page: {
+        body: '更新后的来源索引仍来自用户输入。',
+      },
+    });
+
+    const reordered = await service.reorderDraftPage(
+      projectId,
+      artifactId,
+      secondPageId,
+      0,
+    );
+    expect(
+      readDraftArtifactPayload(reordered.artifacts[0]!).pages.map(
+        (page) => page.id,
+      ),
+    ).toEqual([secondPageId, firstPageId]);
+
+    const locked = await service.setDraftPageLocked(
+      projectId,
+      artifactId,
+      firstPageId,
+      true,
+    );
+    await expect(
+      service.updateDraftPage(
+        projectId,
+        artifactId,
+        firstPageId,
+        { title: '不得写入' },
+      ),
+    ).rejects.toMatchObject({
+      name: 'DraftDomainError',
+      code: 'PAGE_LOCKED',
+    });
+    await expect(
+      service.deleteDraftPage(
+        projectId,
+        artifactId,
+        firstPageId,
+      ),
+    ).rejects.toMatchObject({
+      name: 'DraftDomainError',
+      code: 'PAGE_LOCKED',
+    });
+    await expect(
+      service.reorderDraftPage(
+        projectId,
+        artifactId,
+        firstPageId,
+        0,
+      ),
+    ).rejects.toMatchObject({
+      name: 'DraftDomainError',
+      code: 'PAGE_LOCKED',
+    });
+    await expect(store.getProject(projectId)).resolves.toEqual(locked);
+
+    const unlocked = await service.setDraftPageLocked(
+      projectId,
+      artifactId,
+      firstPageId,
+      false,
+    );
+    const deleted = await service.deleteDraftPage(
+      projectId,
+      artifactId,
+      firstPageId,
+    );
+    expect(
+      readDraftArtifactPayload(deleted.artifacts[0]!).pages.map(
+        (page) => page.id,
+      ),
+    ).toEqual([secondPageId]);
+    expect(deleted.version).toBe(unlocked.version + 1);
+
+    for (const [savedProject, expectedVersion] of saveSpy.mock.calls) {
+      expect(savedProject.version).toBe(expectedVersion + 1);
+    }
+  });
+
+  it('rejects draft artifacts and pages with invalid outline, evidence or rubric references', async () => {
+    const {
+      store,
+      service,
+      projectId,
+      evidenceId,
+      outlineId,
+      outlineNodeId,
+      rubricCriterionIds,
+    } = await serviceWithSelectedOutline();
+    const withArtifact = await service.ensureDraftArtifact(
+      projectId,
+      outlineId,
+    );
+    const artifactId = withArtifact.artifacts[0]!.id;
+    const unknownId = '01900000-0000-7000-8000-000000000999';
+
+    await expect(
+      service.insertDraftPage(projectId, artifactId, {
+        outlineNodeId: unknownId,
+        index: 0,
+        page: authoredDraftPage(evidenceId, rubricCriterionIds),
+      }),
+    ).rejects.toMatchObject({
+      name: 'WorkbenchServiceInputError',
+      code: 'OUTLINE_NODE_NOT_FOUND',
+    });
+    await expect(
+      service.insertDraftPage(projectId, artifactId, {
+        outlineNodeId,
+        index: 0,
+        page: authoredDraftPage(unknownId, rubricCriterionIds),
+      }),
+    ).rejects.toMatchObject({
+      name: 'WorkbenchServiceInputError',
+      code: 'DRAFT_EVIDENCE_NOT_FOUND',
+    });
+    await expect(
+      service.insertDraftPage(projectId, artifactId, {
+        outlineNodeId,
+        index: 0,
+        page: authoredDraftPage(evidenceId, [unknownId]),
+      }),
+    ).rejects.toMatchObject({
+      name: 'WorkbenchServiceInputError',
+      code: 'DRAFT_RUBRIC_NOT_FOUND',
+    });
+    await expect(store.getProject(projectId)).resolves.toEqual(
+      withArtifact,
+    );
+
+    const draftOutline = await service.createOutline(projectId, {
+      title: 'Not selected',
+      nodes: [],
+    });
+    await expect(
+      service.ensureDraftArtifact(
+        projectId,
+        draftOutline.outlines.at(-1)!.id,
+      ),
+    ).rejects.toMatchObject({
+      name: 'WorkbenchServiceInputError',
+      code: 'OUTLINE_NOT_SELECTED',
+    });
+  });
+
+  it('persists stable versioned verification results and stales them after draft edits', async () => {
+    const {
+      store,
+      service,
+      projectId,
+      evidenceId,
+      outlineId,
+      outlineNodeId,
+      rubricCriterionIds,
+    } = await serviceWithSelectedOutline();
+    const withArtifact = await service.ensureDraftArtifact(
+      projectId,
+      outlineId,
+    );
+    const artifactId = withArtifact.artifacts[0]!.id;
+    await service.insertDraftPage(projectId, artifactId, {
+      outlineNodeId,
+      index: 0,
+      page: authoredDraftPage(evidenceId, rubricCriterionIds),
+    });
+    const saveSpy = vi.spyOn(store, 'saveProject');
+
+    const firstVerification = await service.verifyDraftArtifact(
+      projectId,
+      artifactId,
+    );
+    const firstResult = firstVerification.verificationResults[0]!;
+    expect(firstResult).toMatchObject({
+      version: 1,
+      projectId,
+      artifactId,
+      artifactVersion: firstVerification.artifacts[0]!.version,
+      status: 'failed',
+      checkedAt: expect.any(String),
+    });
+    expect(firstResult.checks).not.toHaveLength(0);
+    expect(firstResult.checks.every((check) => UUID_V7.test(check.id))).toBe(
+      true,
+    );
+    expect(firstResult.summary).toEqual({
+      passed: firstResult.checks.filter(
+        (check) => check.outcome === 'pass',
+      ).length,
+      warnings: firstResult.checks.filter(
+        (check) => check.outcome === 'warning',
+      ).length,
+      failed: firstResult.checks.filter(
+        (check) => check.outcome === 'fail',
+      ).length,
+      notRun: firstResult.checks.filter(
+        (check) => check.outcome === 'not_run',
+      ).length,
+    });
+
+    const repeated = await service.verifyDraftArtifact(
+      projectId,
+      artifactId,
+    );
+    const repeatedResult = repeated.verificationResults[0]!;
+    expect(repeatedResult.id).toBe(firstResult.id);
+    expect(repeatedResult.version).toBe(firstResult.version + 1);
+    expect(repeatedResult.checkedAt > firstResult.checkedAt).toBe(true);
+    expect(repeatedResult.checks.map((check) => check.id)).toEqual(
+      firstResult.checks.map((check) => check.id),
+    );
+    expect(
+      repeatedResult.checks.map((check) => check.version),
+    ).toEqual(firstResult.checks.map((check) => check.version + 1));
+
+    const pageId = readDraftArtifactPayload(
+      repeated.artifacts[0]!,
+    ).pages[0]!.id;
+    const edited = await service.updateDraftPage(
+      projectId,
+      artifactId,
+      pageId,
+      { speakerNotes: '用户修改后的讲稿。' },
+    );
+    expect(edited.verificationResults[0]).toMatchObject({
+      id: firstResult.id,
+      version: repeatedResult.version + 1,
+      status: 'stale',
+      artifactVersion: edited.artifacts[0]!.version,
+    });
+
+    for (const [savedProject, expectedVersion] of saveSpy.mock.calls) {
+      expect(savedProject.version).toBe(expectedVersion + 1);
+    }
   });
 
   it('ingests a real DOCX archive through the workbench pipeline', async () => {

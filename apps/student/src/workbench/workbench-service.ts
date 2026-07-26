@@ -1,6 +1,9 @@
 import {
   PROJECT_SCHEMA_VERSION,
   parseProject,
+  type Artifact,
+  type ArtifactKind,
+  type IsoDateTime,
   type OutputFormat,
   type Outline,
   type Project,
@@ -8,6 +11,10 @@ import {
   type RubricCriterion,
   type SourceChunk,
   type SourceFile as ProjectSourceFile,
+  type VerificationCheck,
+  type VerificationResult,
+  type VerificationStatus,
+  type VerificationSummary,
 } from './project-model.js';
 import {
   ProjectNotFoundError,
@@ -42,6 +49,18 @@ import {
   type TraceableTextChunk,
 } from './text-parsers.js';
 import type { BrowserOfficeParserErrorCode } from './docx-pptx-parser.js';
+import {
+  createDraftPage,
+  insertDraftPage as insertPage,
+  moveDraftPage as movePage,
+  removeDraftPage as removePage,
+  setDraftPageLocked as setPageLocked,
+  toProjectVerificationCheckDraft,
+  updateDraftPage as updatePage,
+  verifyDraft,
+  type DraftPage,
+  type DraftPagePatch,
+} from './draft-verification.js';
 
 export interface WorkbenchRubricFormInput {
   title: string;
@@ -98,6 +117,76 @@ export interface WorkbenchOutlineNodePatchInput {
   evidenceCardIds?: readonly string[];
   coveredRequirements?: readonly string[];
   rubricCriterionIds?: readonly string[];
+}
+
+export const DRAFT_ARTIFACT_FORMAT =
+  'zuocheng-draft-artifact' as const;
+export const DRAFT_ARTIFACT_FORMAT_VERSION = 1 as const;
+
+export interface VersionedDraftPage {
+  id: string;
+  version: number;
+  createdAt: IsoDateTime;
+  updatedAt: IsoDateTime;
+  outlineNodeId: string;
+  page: DraftPage;
+}
+
+export interface DraftArtifactPayload {
+  format: typeof DRAFT_ARTIFACT_FORMAT;
+  formatVersion: typeof DRAFT_ARTIFACT_FORMAT_VERSION;
+  id: string;
+  version: number;
+  createdAt: IsoDateTime;
+  updatedAt: IsoDateTime;
+  pages: readonly VersionedDraftPage[];
+}
+
+export interface WorkbenchInsertDraftPageInput {
+  outlineNodeId: string;
+  index: number;
+  page: Omit<DraftPage, 'id' | 'locked'>;
+}
+
+export class DraftArtifactPayloadError extends Error {
+  constructor(readonly path: string, message: string) {
+    super(`${path}: ${message}`);
+    this.name = 'DraftArtifactPayloadError';
+  }
+}
+
+export function parseDraftArtifactPayload(
+  input: unknown,
+): DraftArtifactPayload {
+  return parseDraftPayloadAt(input, 'draftArtifactPayload');
+}
+
+export function readDraftArtifactPayload(
+  artifact: Artifact,
+): DraftArtifactPayload {
+  const payload = parseDraftArtifactPayload(artifact.payload);
+  if (payload.id !== artifact.id) {
+    failDraftPayload(
+      'draftArtifactPayload.id',
+      'must match artifact.id',
+    );
+  }
+  if (payload.version !== artifact.version) {
+    failDraftPayload(
+      'draftArtifactPayload.version',
+      'must match artifact.version',
+    );
+  }
+  if (
+    payload.createdAt !== artifact.createdAt ||
+    payload.updatedAt !== artifact.updatedAt
+  ) {
+    failDraftPayload(
+      'draftArtifactPayload.updatedAt',
+      'timestamps must match the artifact',
+    );
+  }
+  return payload;
 }
 
 export type SourceIngestionFailureCode =
@@ -161,6 +250,42 @@ export interface WorkbenchService {
   ): Promise<Project>;
   selectOutline(projectId: string, outlineId: string): Promise<Project>;
   lockOutline(projectId: string, outlineId: string): Promise<Project>;
+  ensureDraftArtifact(
+    projectId: string,
+    outlineId: string,
+  ): Promise<Project>;
+  insertDraftPage(
+    projectId: string,
+    artifactId: string,
+    input: WorkbenchInsertDraftPageInput,
+  ): Promise<Project>;
+  updateDraftPage(
+    projectId: string,
+    artifactId: string,
+    pageId: string,
+    patch: DraftPagePatch,
+  ): Promise<Project>;
+  deleteDraftPage(
+    projectId: string,
+    artifactId: string,
+    pageId: string,
+  ): Promise<Project>;
+  reorderDraftPage(
+    projectId: string,
+    artifactId: string,
+    pageId: string,
+    targetIndex: number,
+  ): Promise<Project>;
+  setDraftPageLocked(
+    projectId: string,
+    artifactId: string,
+    pageId: string,
+    locked: boolean,
+  ): Promise<Project>;
+  verifyDraftArtifact(
+    projectId: string,
+    artifactId: string,
+  ): Promise<Project>;
   ingestSourceFile(
     projectId: string,
     file: File,
@@ -183,7 +308,12 @@ export type WorkbenchServiceInputErrorCode =
   | 'DUPLICATE_EVIDENCE'
   | 'EVIDENCE_CONFIRMATION_REQUIRED'
   | 'OUTLINE_NOT_FOUND'
-  | 'OUTLINE_NOT_SELECTED';
+  | 'OUTLINE_NOT_SELECTED'
+  | 'OUTLINE_NODE_NOT_FOUND'
+  | 'DRAFT_ARTIFACT_NOT_FOUND'
+  | 'DRAFT_ARTIFACT_NOT_EDITABLE'
+  | 'DRAFT_EVIDENCE_NOT_FOUND'
+  | 'DRAFT_RUBRIC_NOT_FOUND';
 
 export class WorkbenchServiceInputError extends Error {
   constructor(readonly code: WorkbenchServiceInputErrorCode) {
@@ -547,6 +677,296 @@ class DefaultWorkbenchService implements WorkbenchService {
     return this.saveOutline(current, locked, updatedAt, locked.id);
   }
 
+  async ensureDraftArtifact(
+    projectId: string,
+    outlineId: string,
+  ): Promise<Project> {
+    const current = await this.requireProject(projectId);
+    const outline = this.requireDraftOutline(current, outlineId);
+    const existing = current.artifacts.find(
+      (artifact) =>
+        artifact.outlineId === outlineId &&
+        isDraftPayloadCandidate(artifact.payload),
+    );
+    if (existing !== undefined) {
+      this.requireEditableDraftArtifact(current, existing.id);
+      return current;
+    }
+
+    const updatedAt = this.timestampAfter(current.updatedAt);
+    const artifactId = this.idFactory();
+    const payload: DraftArtifactPayload = {
+      format: DRAFT_ARTIFACT_FORMAT,
+      formatVersion: DRAFT_ARTIFACT_FORMAT_VERSION,
+      id: artifactId,
+      version: 1,
+      createdAt: updatedAt,
+      updatedAt,
+      pages: [],
+    };
+    const artifact: Artifact = {
+      id: artifactId,
+      version: 1,
+      createdAt: updatedAt,
+      updatedAt,
+      projectId,
+      outlineId,
+      outlineVersion: outline.version,
+      kind: draftArtifactKind(current),
+      status: 'draft',
+      payload: draftPayloadJson(parseDraftArtifactPayload(payload)),
+      blobId: null,
+      contentSha256: null,
+      staleBecause: [],
+      errorCode: null,
+    };
+    const next = parseProject({
+      ...current,
+      version: current.version + 1,
+      updatedAt,
+      artifacts: [...current.artifacts, artifact],
+    });
+    return this.store.saveProject(next, current.version);
+  }
+
+  async insertDraftPage(
+    projectId: string,
+    artifactId: string,
+    input: WorkbenchInsertDraftPageInput,
+  ): Promise<Project> {
+    const current = await this.requireProject(projectId);
+    const { artifact, outline, payload } =
+      this.requireEditableDraftArtifact(current, artifactId);
+    const updatedAt = this.timestampAfter(current.updatedAt);
+    const pageId = this.idFactory();
+    const page = createDraftPage({
+      ...input.page,
+      id: pageId,
+      locked: false,
+    });
+    const pages = insertPage(
+      payload.pages.map((record) => record.page),
+      page,
+      input.index,
+    );
+    const inserted: VersionedDraftPage = {
+      id: pageId,
+      version: 1,
+      createdAt: updatedAt,
+      updatedAt,
+      outlineNodeId: input.outlineNodeId,
+      page,
+    };
+    const byId = new Map(
+      payload.pages.map((record) => [record.id, record]),
+    );
+    byId.set(inserted.id, inserted);
+    const records = pages.map((candidate) => byId.get(candidate.id)!);
+    this.assertDraftPageReferences(records, current, outline);
+    return this.saveDraftPages(
+      current,
+      artifact,
+      payload,
+      records,
+      updatedAt,
+    );
+  }
+
+  async updateDraftPage(
+    projectId: string,
+    artifactId: string,
+    pageId: string,
+    patch: DraftPagePatch,
+  ): Promise<Project> {
+    const current = await this.requireProject(projectId);
+    const { artifact, outline, payload } =
+      this.requireEditableDraftArtifact(current, artifactId);
+    const updatedAt = this.timestampAfter(current.updatedAt);
+    const pages = updatePage(
+      payload.pages.map((record) => record.page),
+      pageId,
+      patch,
+    );
+    const records = payload.pages.map((record) => {
+      if (record.id !== pageId) {
+        return record;
+      }
+      const page = pages.find((candidate) => candidate.id === pageId)!;
+      return {
+        ...record,
+        version: record.version + 1,
+        updatedAt,
+        page,
+      };
+    });
+    this.assertDraftPageReferences(records, current, outline);
+    return this.saveDraftPages(
+      current,
+      artifact,
+      payload,
+      records,
+      updatedAt,
+    );
+  }
+
+  async deleteDraftPage(
+    projectId: string,
+    artifactId: string,
+    pageId: string,
+  ): Promise<Project> {
+    const current = await this.requireProject(projectId);
+    const { artifact, outline, payload } =
+      this.requireEditableDraftArtifact(current, artifactId);
+    const updatedAt = this.timestampAfter(current.updatedAt);
+    const pages = removePage(
+      payload.pages.map((record) => record.page),
+      pageId,
+    );
+    const recordsById = new Map(
+      payload.pages.map((record) => [record.id, record]),
+    );
+    const records = pages.map((page) => recordsById.get(page.id)!);
+    this.assertDraftPageReferences(records, current, outline);
+    return this.saveDraftPages(
+      current,
+      artifact,
+      payload,
+      records,
+      updatedAt,
+    );
+  }
+
+  async reorderDraftPage(
+    projectId: string,
+    artifactId: string,
+    pageId: string,
+    targetIndex: number,
+  ): Promise<Project> {
+    const current = await this.requireProject(projectId);
+    const { artifact, outline, payload } =
+      this.requireEditableDraftArtifact(current, artifactId);
+    const updatedAt = this.timestampAfter(current.updatedAt);
+    const pages = movePage(
+      payload.pages.map((record) => record.page),
+      pageId,
+      targetIndex,
+    );
+    const recordsById = new Map(
+      payload.pages.map((record) => [record.id, record]),
+    );
+    const records = pages.map((page) => recordsById.get(page.id)!);
+    this.assertDraftPageReferences(records, current, outline);
+    return this.saveDraftPages(
+      current,
+      artifact,
+      payload,
+      records,
+      updatedAt,
+    );
+  }
+
+  async setDraftPageLocked(
+    projectId: string,
+    artifactId: string,
+    pageId: string,
+    locked: boolean,
+  ): Promise<Project> {
+    const current = await this.requireProject(projectId);
+    const { artifact, outline, payload } =
+      this.requireEditableDraftArtifact(current, artifactId);
+    const updatedAt = this.timestampAfter(current.updatedAt);
+    const pages = setPageLocked(
+      payload.pages.map((record) => record.page),
+      pageId,
+      locked,
+    );
+    const records = payload.pages.map((record) => {
+      if (record.id !== pageId) {
+        return record;
+      }
+      const page = pages.find((candidate) => candidate.id === pageId)!;
+      return {
+        ...record,
+        version: record.version + 1,
+        updatedAt,
+        page,
+      };
+    });
+    this.assertDraftPageReferences(records, current, outline);
+    return this.saveDraftPages(
+      current,
+      artifact,
+      payload,
+      records,
+      updatedAt,
+    );
+  }
+
+  async verifyDraftArtifact(
+    projectId: string,
+    artifactId: string,
+  ): Promise<Project> {
+    const current = await this.requireProject(projectId);
+    const { artifact, outline, payload } =
+      this.requireEditableDraftArtifact(current, artifactId);
+    this.assertDraftPageReferences(payload.pages, current, outline);
+    const checkedAt = this.timestampAfter(current.updatedAt);
+    const drafts = verifyDraft({
+      pages: payload.pages.map((record) => record.page),
+      taskDefinition: current.taskDefinition,
+      evidenceCards: current.evidenceCards,
+    }).map(toProjectVerificationCheckDraft);
+    const existing = current.verificationResults.find(
+      (result) => result.artifactId === artifact.id,
+    );
+    const previousChecks = new Map<string, VerificationCheck[]>();
+    for (const check of existing?.checks ?? []) {
+      const key = verificationCheckKey(check);
+      const matches = previousChecks.get(key) ?? [];
+      matches.push(check);
+      previousChecks.set(key, matches);
+    }
+    const checks: VerificationCheck[] = drafts.map((draft) => {
+      const key = verificationCheckKey(draft);
+      const matches = previousChecks.get(key);
+      const previous = matches?.shift();
+      return {
+        id: previous?.id ?? this.idFactory(),
+        version: previous === undefined ? 1 : previous.version + 1,
+        createdAt: previous?.createdAt ?? checkedAt,
+        updatedAt: checkedAt,
+        ...draft,
+        evidenceCardIds: [...draft.evidenceCardIds],
+      };
+    });
+    const summary = verificationSummary(checks);
+    const result: VerificationResult = {
+      id: existing?.id ?? this.idFactory(),
+      version: existing === undefined ? 1 : existing.version + 1,
+      createdAt: existing?.createdAt ?? checkedAt,
+      updatedAt: checkedAt,
+      projectId,
+      artifactId,
+      artifactVersion: artifact.version,
+      status: verificationStatus(summary),
+      checkedAt,
+      checks,
+      summary,
+    };
+    const next = parseProject({
+      ...current,
+      version: current.version + 1,
+      updatedAt: checkedAt,
+      verificationResults: [
+        ...current.verificationResults.filter(
+          (candidate) => candidate.artifactId !== artifactId,
+        ),
+        result,
+      ],
+    });
+    return this.store.saveProject(next, current.version);
+  }
+
   async ingestSourceFile(
     projectId: string,
     file: File,
@@ -764,6 +1184,134 @@ class DefaultWorkbenchService implements WorkbenchService {
       throw new ProjectNotFoundError(projectId);
     }
     return project;
+  }
+
+  private requireDraftOutline(
+    project: Project,
+    outlineId: string,
+  ): EvidenceBoundOutline {
+    const outline = this.findOutline(project, outlineId);
+    if (outline.status !== 'selected' && outline.status !== 'locked') {
+      throw new WorkbenchServiceInputError('OUTLINE_NOT_SELECTED');
+    }
+    return outline;
+  }
+
+  private requireEditableDraftArtifact(
+    project: Project,
+    artifactId: string,
+  ): Readonly<{
+    artifact: Artifact;
+    outline: EvidenceBoundOutline;
+    payload: DraftArtifactPayload;
+  }> {
+    const artifact = project.artifacts.find(
+      (candidate) => candidate.id === artifactId,
+    );
+    if (artifact === undefined || !isDraftPayloadCandidate(artifact.payload)) {
+      throw new WorkbenchServiceInputError(
+        'DRAFT_ARTIFACT_NOT_FOUND',
+      );
+    }
+    if (artifact.status !== 'draft') {
+      throw new WorkbenchServiceInputError(
+        'DRAFT_ARTIFACT_NOT_EDITABLE',
+      );
+    }
+    const outline = this.requireDraftOutline(
+      project,
+      artifact.outlineId,
+    );
+    return {
+      artifact,
+      outline,
+      payload: readDraftArtifactPayload(artifact),
+    };
+  }
+
+  private assertDraftPageReferences(
+    records: readonly VersionedDraftPage[],
+    project: Project,
+    outline: EvidenceBoundOutline,
+  ): void {
+    const outlineNodeIds = new Set(
+      outline.nodes.map((node) => node.id),
+    );
+    const evidenceIds = new Set(
+      project.evidenceCards.map((evidence) => evidence.id),
+    );
+    const rubricIds = new Set(
+      project.taskDefinition.rubric.map((criterion) => criterion.id),
+    );
+    for (const record of records) {
+      if (!outlineNodeIds.has(record.outlineNodeId)) {
+        throw new WorkbenchServiceInputError(
+          'OUTLINE_NODE_NOT_FOUND',
+        );
+      }
+      if (
+        record.page.evidenceCardIds.some(
+          (evidenceId) => !evidenceIds.has(evidenceId),
+        )
+      ) {
+        throw new WorkbenchServiceInputError(
+          'DRAFT_EVIDENCE_NOT_FOUND',
+        );
+      }
+      if (
+        record.page.rubricCriterionIds.some(
+          (rubricId) => !rubricIds.has(rubricId),
+        )
+      ) {
+        throw new WorkbenchServiceInputError(
+          'DRAFT_RUBRIC_NOT_FOUND',
+        );
+      }
+    }
+  }
+
+  private async saveDraftPages(
+    current: Project,
+    artifact: Artifact,
+    payload: DraftArtifactPayload,
+    pages: readonly VersionedDraftPage[],
+    updatedAt: string,
+  ): Promise<Project> {
+    const version = artifact.version + 1;
+    const nextPayload = parseDraftArtifactPayload({
+      ...payload,
+      version,
+      updatedAt,
+      pages,
+    });
+    const nextArtifact: Artifact = {
+      ...artifact,
+      version,
+      updatedAt,
+      payload: draftPayloadJson(nextPayload),
+    };
+    const verificationResults = current.verificationResults.map(
+      (result): VerificationResult =>
+        result.artifactId === artifact.id
+          ? {
+              ...result,
+              version: result.version + 1,
+              updatedAt,
+              artifactVersion: version,
+              status: 'stale',
+            }
+          : result,
+    );
+    const next = parseProject({
+      ...current,
+      version: current.version + 1,
+      updatedAt,
+      artifacts: current.artifacts.map((candidate) =>
+        candidate.id === artifact.id ? nextArtifact : candidate,
+      ),
+      verificationResults,
+    });
+    return this.store.saveProject(next, current.version);
   }
 
   private findOutline(
@@ -1041,6 +1589,424 @@ class DefaultWorkbenchService implements WorkbenchService {
     const minimum = Date.parse(previous) + 1;
     return new Date(Math.max(candidate, minimum)).toISOString();
   }
+}
+
+const DRAFT_UUID_V7 =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
+
+function parseDraftPayloadAt(
+  input: unknown,
+  path: string,
+): DraftArtifactPayload {
+  const object = draftObjectAt(input, path);
+  assertDraftKeys(
+    object,
+    [
+      'format',
+      'formatVersion',
+      'id',
+      'version',
+      'createdAt',
+      'updatedAt',
+      'pages',
+    ],
+    path,
+  );
+  if (object.format !== DRAFT_ARTIFACT_FORMAT) {
+    failDraftPayload(
+      `${path}.format`,
+      `must equal ${DRAFT_ARTIFACT_FORMAT}`,
+    );
+  }
+  if (object.formatVersion !== DRAFT_ARTIFACT_FORMAT_VERSION) {
+    failDraftPayload(
+      `${path}.formatVersion`,
+      `must equal ${String(DRAFT_ARTIFACT_FORMAT_VERSION)}`,
+    );
+  }
+  const createdAt = draftDateTimeAt(object.createdAt, `${path}.createdAt`);
+  const updatedAt = draftDateTimeAt(object.updatedAt, `${path}.updatedAt`);
+  if (Date.parse(updatedAt) < Date.parse(createdAt)) {
+    failDraftPayload(
+      `${path}.updatedAt`,
+      'must not be before createdAt',
+    );
+  }
+  const pages = draftArrayAt(object.pages, `${path}.pages`).map(
+    (candidate, index) =>
+      parseVersionedDraftPage(
+        candidate,
+        `${path}.pages[${String(index)}]`,
+      ),
+  );
+  if (new Set(pages.map((page) => page.id)).size !== pages.length) {
+    failDraftPayload(`${path}.pages`, 'must contain unique page ids');
+  }
+  if (
+    pages.some(
+      (page) =>
+        Date.parse(page.createdAt) < Date.parse(createdAt) ||
+        Date.parse(page.updatedAt) > Date.parse(updatedAt),
+    )
+  ) {
+    failDraftPayload(
+      `${path}.pages`,
+      'page timestamps must remain within payload timestamps',
+    );
+  }
+  return Object.freeze({
+    format: DRAFT_ARTIFACT_FORMAT,
+    formatVersion: DRAFT_ARTIFACT_FORMAT_VERSION,
+    id: draftIdAt(object.id, `${path}.id`),
+    version: draftPositiveIntegerAt(object.version, `${path}.version`),
+    createdAt,
+    updatedAt,
+    pages: Object.freeze(pages),
+  });
+}
+
+function parseVersionedDraftPage(
+  input: unknown,
+  path: string,
+): VersionedDraftPage {
+  const object = draftObjectAt(input, path);
+  assertDraftKeys(
+    object,
+    [
+      'id',
+      'version',
+      'createdAt',
+      'updatedAt',
+      'outlineNodeId',
+      'page',
+    ],
+    path,
+  );
+  const id = draftIdAt(object.id, `${path}.id`);
+  const createdAt = draftDateTimeAt(object.createdAt, `${path}.createdAt`);
+  const updatedAt = draftDateTimeAt(object.updatedAt, `${path}.updatedAt`);
+  if (Date.parse(updatedAt) < Date.parse(createdAt)) {
+    failDraftPayload(
+      `${path}.updatedAt`,
+      'must not be before createdAt',
+    );
+  }
+  const page = parsePersistedDraftPage(object.page, `${path}.page`);
+  if (page.id !== id) {
+    failDraftPayload(`${path}.page.id`, 'must match the page record id');
+  }
+  return Object.freeze({
+    id,
+    version: draftPositiveIntegerAt(object.version, `${path}.version`),
+    createdAt,
+    updatedAt,
+    outlineNodeId: draftIdAt(
+      object.outlineNodeId,
+      `${path}.outlineNodeId`,
+    ),
+    page,
+  });
+}
+
+function parsePersistedDraftPage(
+  input: unknown,
+  path: string,
+): DraftPage {
+  const object = draftObjectAt(input, path);
+  assertDraftKeys(
+    object,
+    [
+      'id',
+      'title',
+      'conclusion',
+      'body',
+      'evidenceCardIds',
+      'citations',
+      'visualNote',
+      'speakerNotes',
+      'estimatedSeconds',
+      'locked',
+      'rubricCriterionIds',
+      'claims',
+    ],
+    path,
+  );
+  const citations = draftArrayAt(
+    object.citations,
+    `${path}.citations`,
+  ).map((candidate, index) => {
+    const citationPath = `${path}.citations[${String(index)}]`;
+    const citation = draftObjectAt(candidate, citationPath);
+    assertDraftKeys(
+      citation,
+      ['evidenceCardId', 'label'],
+      citationPath,
+    );
+    return {
+      evidenceCardId: draftIdAt(
+        citation.evidenceCardId,
+        `${citationPath}.evidenceCardId`,
+      ),
+      label: draftStringAt(citation.label, `${citationPath}.label`),
+    };
+  });
+  const claims = draftArrayAt(object.claims, `${path}.claims`).map(
+    (candidate, index) => {
+      const claimPath = `${path}.claims[${String(index)}]`;
+      const claim = draftObjectAt(candidate, claimPath);
+      assertDraftKeys(
+        claim,
+        ['id', 'text', 'evidenceCardIds', 'numericFacts'],
+        claimPath,
+      );
+      const numericFacts = draftArrayAt(
+        claim.numericFacts,
+        `${claimPath}.numericFacts`,
+      ).map((factCandidate, factIndex) => {
+        const factPath =
+          `${claimPath}.numericFacts[${String(factIndex)}]`;
+        const fact = draftObjectAt(factCandidate, factPath);
+        assertDraftKeys(fact, ['metric', 'value', 'unit'], factPath);
+        if (
+          typeof fact.value !== 'number' ||
+          !Number.isFinite(fact.value)
+        ) {
+          failDraftPayload(`${factPath}.value`, 'must be finite');
+        }
+        return {
+          metric: draftStringAt(fact.metric, `${factPath}.metric`),
+          value: fact.value,
+          unit: draftStringAt(fact.unit, `${factPath}.unit`),
+        };
+      });
+      return {
+        id: draftStringAt(claim.id, `${claimPath}.id`),
+        text: draftStringAt(claim.text, `${claimPath}.text`),
+        evidenceCardIds: draftIdArrayAt(
+          claim.evidenceCardIds,
+          `${claimPath}.evidenceCardIds`,
+        ),
+        numericFacts,
+      };
+    },
+  );
+  if (typeof object.estimatedSeconds !== 'number') {
+    failDraftPayload(
+      `${path}.estimatedSeconds`,
+      'must be a number',
+    );
+  }
+  if (typeof object.locked !== 'boolean') {
+    failDraftPayload(`${path}.locked`, 'must be a boolean');
+  }
+  try {
+    return createDraftPage({
+      id: draftIdAt(object.id, `${path}.id`),
+      title: draftStringAt(object.title, `${path}.title`),
+      conclusion: draftStringAt(
+        object.conclusion,
+        `${path}.conclusion`,
+      ),
+      body: draftStringAt(object.body, `${path}.body`),
+      evidenceCardIds: draftIdArrayAt(
+        object.evidenceCardIds,
+        `${path}.evidenceCardIds`,
+      ),
+      citations,
+      visualNote: draftStringAt(
+        object.visualNote,
+        `${path}.visualNote`,
+      ),
+      speakerNotes: draftStringAt(
+        object.speakerNotes,
+        `${path}.speakerNotes`,
+      ),
+      estimatedSeconds: object.estimatedSeconds,
+      locked: object.locked,
+      rubricCriterionIds: draftIdArrayAt(
+        object.rubricCriterionIds,
+        `${path}.rubricCriterionIds`,
+      ),
+      claims,
+    });
+  } catch (error) {
+    if (
+      typeof error === 'object' &&
+      error !== null &&
+      'code' in error &&
+      typeof error.code === 'string'
+    ) {
+      failDraftPayload(path, error.code);
+    }
+    throw error;
+  }
+}
+
+function draftObjectAt(
+  value: unknown,
+  path: string,
+): Record<string, unknown> {
+  if (
+    typeof value !== 'object' ||
+    value === null ||
+    Array.isArray(value) ||
+    Object.getPrototypeOf(value) !== Object.prototype
+  ) {
+    failDraftPayload(path, 'must be a plain object');
+  }
+  return value as Record<string, unknown>;
+}
+
+function draftArrayAt(value: unknown, path: string): unknown[] {
+  if (!Array.isArray(value)) {
+    failDraftPayload(path, 'must be an array');
+  }
+  return value;
+}
+
+function draftStringAt(value: unknown, path: string): string {
+  if (typeof value !== 'string') {
+    failDraftPayload(path, 'must be a string');
+  }
+  return value;
+}
+
+function draftIdAt(value: unknown, path: string): string {
+  const id = draftStringAt(value, path);
+  if (!DRAFT_UUID_V7.test(id) || id !== id.toLowerCase()) {
+    failDraftPayload(path, 'must be a canonical lowercase UUIDv7');
+  }
+  return id;
+}
+
+function draftIdArrayAt(value: unknown, path: string): string[] {
+  const ids = draftArrayAt(value, path).map((candidate, index) =>
+    draftIdAt(candidate, `${path}[${String(index)}]`),
+  );
+  if (new Set(ids).size !== ids.length) {
+    failDraftPayload(path, 'must contain unique ids');
+  }
+  return ids;
+}
+
+function draftPositiveIntegerAt(value: unknown, path: string): number {
+  if (
+    typeof value !== 'number' ||
+    !Number.isSafeInteger(value) ||
+    value < 1
+  ) {
+    failDraftPayload(path, 'must be a positive safe integer');
+  }
+  return value;
+}
+
+function draftDateTimeAt(value: unknown, path: string): string {
+  const dateTime = draftStringAt(value, path);
+  const parsed = new Date(dateTime);
+  if (
+    !Number.isFinite(parsed.valueOf()) ||
+    parsed.toISOString() !== dateTime
+  ) {
+    failDraftPayload(path, 'must be a canonical ISO-8601 timestamp');
+  }
+  return dateTime;
+}
+
+function assertDraftKeys(
+  object: Record<string, unknown>,
+  expected: readonly string[],
+  path: string,
+): void {
+  const actual = Object.keys(object).sort();
+  const sortedExpected = [...expected].sort();
+  if (
+    actual.length !== sortedExpected.length ||
+    actual.some((key, index) => key !== sortedExpected[index])
+  ) {
+    failDraftPayload(
+      path,
+      `must contain exactly: ${sortedExpected.join(', ')}`,
+    );
+  }
+}
+
+function failDraftPayload(path: string, message: string): never {
+  throw new DraftArtifactPayloadError(path, message);
+}
+
+function isDraftPayloadCandidate(value: unknown): boolean {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    !Array.isArray(value) &&
+    'format' in value &&
+    value.format === DRAFT_ARTIFACT_FORMAT
+  );
+}
+
+function draftPayloadJson(
+  payload: DraftArtifactPayload,
+): Artifact['payload'] {
+  return payload as unknown as Artifact['payload'];
+}
+
+function draftArtifactKind(project: Project): ArtifactKind {
+  const formats = project.taskDefinition.outputFormats;
+  if (formats.includes('pptx')) {
+    return 'presentation';
+  }
+  if (formats.includes('docx') || formats.includes('pdf')) {
+    return 'document';
+  }
+  if (formats.includes('markdown')) {
+    return 'markdown';
+  }
+  if (formats.includes('script')) {
+    return 'script';
+  }
+  if (formats.includes('source-index')) {
+    return 'source_index';
+  }
+  if (formats.includes('task-card')) {
+    return 'task_definition';
+  }
+  if (formats.includes('verification-record')) {
+    return 'verification_record';
+  }
+  return 'project_package';
+}
+
+function verificationCheckKey(
+  check: Pick<
+    VerificationCheck,
+    'rule' | 'artifactPath' | 'evidenceCardIds'
+  >,
+): string {
+  return [
+    check.rule,
+    check.artifactPath,
+    ...check.evidenceCardIds,
+  ].join('\u0000');
+}
+
+function verificationSummary(
+  checks: readonly VerificationCheck[],
+): VerificationSummary {
+  return {
+    passed: checks.filter((check) => check.outcome === 'pass').length,
+    warnings: checks.filter((check) => check.outcome === 'warning').length,
+    failed: checks.filter((check) => check.outcome === 'fail').length,
+    notRun: checks.filter((check) => check.outcome === 'not_run').length,
+  };
+}
+
+function verificationStatus(
+  summary: VerificationSummary,
+): VerificationStatus {
+  if (summary.failed > 0) {
+    return 'failed';
+  }
+  return summary.notRun > 0 ? 'stale' : 'passed';
 }
 
 function normalizedProjectTitle(input: WorkbenchProjectFormInput): string {
