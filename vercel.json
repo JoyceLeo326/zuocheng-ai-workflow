@@ -4,14 +4,7 @@
   "cleanUrls": true,
   "installCommand": "pnpm install --frozen-lockfile",
   "outputDirectory": "dist/vercel",
-  "trailingSlash": false,
-  "redirects": [
-    {
-      "source": "/app",
-      "destination": "/app/",
-      "permanent": true
-    }
-  ],
+  "trailingSlash": true,
   "headers": [
     {
       "source": "/(.*)",
