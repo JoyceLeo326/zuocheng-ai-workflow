@@ -9,6 +9,10 @@ import {
   EvidenceStage,
   type EvidenceStageCreateInput,
 } from './evidence-stage.js';
+import {
+  OutlineStage,
+  type OutlineStageCallbacks,
+} from './outline-stage.js';
 import type {
   SourceIngestionResult,
   WorkbenchProjectFormInput,
@@ -179,6 +183,83 @@ function draftFromProject(project: Project): WorkbenchDraft {
   };
 }
 
+export function hasConfirmedVerifiedEvidence(
+  project: Project | null,
+): boolean {
+  return (
+    project?.evidenceCards.some(
+      (evidence) =>
+        evidence.status === 'verified' &&
+        evidence.confirmationStatus === 'confirmed' &&
+        evidence.userConfirmedAt !== null &&
+        evidence.userConfirmedAt !== undefined,
+    ) ?? false
+  );
+}
+
+export function createOutlineStageCallbacks(
+  service: WorkbenchService,
+  project: Project,
+  onProjectChange: (next: Project) => void,
+): OutlineStageCallbacks {
+  const persist = async (operation: () => Promise<Project>) => {
+    const next = await operation();
+    onProjectChange(next);
+  };
+  return {
+    onCreateOutline: ({ title }) =>
+      persist(() =>
+        service.createOutline(project.id, {
+          title,
+          nodes: [],
+        }),
+      ),
+    onAddNode: ({
+      outlineId,
+      title,
+      conclusion,
+      evidenceCardIds,
+      coveredRequirements,
+      rubricCriterionIds,
+    }) =>
+      persist(() =>
+        service.addOutlineNode(project.id, outlineId, {
+          title,
+          conclusion,
+          evidenceCardIds,
+          coveredRequirements,
+          rubricCriterionIds,
+        }),
+      ),
+    onUpdateNode: ({ outlineId, nodeId, patch }) =>
+      persist(() =>
+        service.updateOutlineNode(
+          project.id,
+          outlineId,
+          nodeId,
+          patch,
+        ),
+      ),
+    onDeleteNode: ({ outlineId, nodeId }) =>
+      persist(() =>
+        service.deleteOutlineNode(project.id, outlineId, nodeId),
+      ),
+    onReorderNode: ({ outlineId, nodeId, targetPosition }) =>
+      persist(() =>
+        service.reorderOutlineNode(
+          project.id,
+          outlineId,
+          nodeId,
+          targetPosition,
+        ),
+      ),
+    onSelectOutline: ({ outlineId }) =>
+      persist(() => service.selectOutline(project.id, outlineId)),
+    onLockOutline: ({ outlineId }) =>
+      persist(() => service.lockOutline(project.id, outlineId)),
+  };
+}
+
 interface WorkflowStage {
   number: string;
   label: string;
@@ -306,6 +387,10 @@ export function WorkbenchShell({
     service !== undefined &&
     missingFields.length === 0 &&
     savePhase !== 'saving';
+  const outlineStageCallbacks =
+    service === undefined || project === null
+      ? null
+      : createOutlineStageCallbacks(service, project, setProject);
 
   const handleMaterials = (event: ChangeEvent<HTMLInputElement>) => {
     const selected = Array.from(event.currentTarget.files ?? []);
@@ -499,7 +584,9 @@ export function WorkbenchShell({
                 index === 0 ||
                 (index === 1 && project !== null) ||
                 (index === 2 &&
-                  (project?.sourceChunks.length ?? 0) > 0);
+                  (project?.sourceChunks.length ?? 0) > 0) ||
+                (index === 3 &&
+                  hasConfirmedVerifiedEvidence(project));
               return (
                 <li className={active ? 'is-active' : undefined} key={stage.number}>
                   <button
@@ -860,6 +947,16 @@ export function WorkbenchShell({
                   });
                 }
               }}
+              project={project}
+            />
+          ) : null}
+
+          {activeStage === 3 &&
+          project !== null &&
+          outlineStageCallbacks !== null ? (
+            <OutlineStage
+              {...outlineStageCallbacks}
+              outlines={project.outlines}
               project={project}
             />
           ) : null}
