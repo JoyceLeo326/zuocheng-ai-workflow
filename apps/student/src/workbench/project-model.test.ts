@@ -195,6 +195,8 @@ function project() {
     ...metadata(PROJECT_ID),
     title: '课程路演',
     status: 'active',
+    statusBeforeTrash: null,
+    trashedAt: null,
     taskDefinition: taskDefinition(),
     sourceFiles: [sourceFile()],
     sourceChunks: [sourceChunk()],
@@ -225,6 +227,44 @@ describe('workbench project domain model', () => {
       id: RUBRIC_ID,
       weightPercent: 100,
     });
+  });
+
+  it('persists valid trash metadata and rejects impossible lifecycle combinations', () => {
+    expect(
+      parseProject({
+        ...project(),
+        status: 'trashed',
+        statusBeforeTrash: 'archived',
+        trashedAt: UPDATED_AT,
+      }),
+    ).toMatchObject({
+      status: 'trashed',
+      statusBeforeTrash: 'archived',
+      trashedAt: UPDATED_AT,
+    });
+
+    for (const invalid of [
+      {
+        ...project(),
+        status: 'trashed',
+        statusBeforeTrash: null,
+        trashedAt: UPDATED_AT,
+      },
+      {
+        ...project(),
+        status: 'active',
+        statusBeforeTrash: 'archived',
+        trashedAt: UPDATED_AT,
+      },
+      {
+        ...project(),
+        status: 'archived',
+        statusBeforeTrash: null,
+        trashedAt: UPDATED_AT,
+      },
+    ]) {
+      expect(() => parseProject(invalid)).toThrow(/trashed|statusBeforeTrash/u);
+    }
   });
 
   it.each([

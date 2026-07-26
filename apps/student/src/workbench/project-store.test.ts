@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { Project, SourceChunk } from './project-model.js';
 import {
+  requestPermanentDelete,
+  trashProject,
+} from './project-lifecycle.js';
+import {
   MemoryProjectStore,
   ProjectAlreadyExistsError,
   ProjectImportError,
@@ -22,6 +26,7 @@ const CREATED_AT = '2026-07-27T01:00:00.000Z';
 const UPDATED_AT = '2026-07-27T02:00:00.000Z';
 const NEXT_UPDATED_AT = '2026-07-27T03:00:00.000Z';
 const EXPORT_AT = '2026-07-27T04:00:00.000Z';
+const PERMANENT_AT = '2026-07-27T05:00:00.000Z';
 const SHA256 = 'b'.repeat(64);
 
 function project(): Project {
@@ -33,6 +38,8 @@ function project(): Project {
     updatedAt: UPDATED_AT,
     title: '课程路演',
     status: 'active',
+    statusBeforeTrash: null,
+    trashedAt: null,
     taskDefinition: {
       id: TASK_ID,
       version: 1,
@@ -128,7 +135,12 @@ function edit(): ProjectEdit {
     kind: 'create',
     path: '$',
     before: null,
-    after: { title: '课程路演' },
+    after: {
+      projectId: PROJECT_ID,
+      sourceFileId: FILE_ID,
+      sourceChunkId: CHUNK_ID,
+      title: '课程路演',
+    },
   };
 }
 
@@ -206,7 +218,7 @@ describe('MemoryProjectStore contract', () => {
     );
   });
 
-  it('deletes the project and every project-owned local record', async () => {
+  it('permanently deletes only a version-matched trashed project and every owned local record', async () => {
     const database = createMemoryProjectDatabase();
     const store = new MemoryProjectStore({ database });
     await store.createProject(project());
@@ -220,16 +232,111 @@ describe('MemoryProjectStore contract', () => {
     );
     await store.appendEdit(edit());
 
-    await expect(store.deleteProject(PROJECT_ID)).resolves.toBeUndefined();
+    const trashed = trashProject(projectWithChunks(), {
+      expectedVersion: 2,
+      now: EXPORT_AT,
+    });
+    await store.saveProject(trashed, 2);
+    const intent = requestPermanentDelete(trashed, {
+      expectedVersion: 3,
+      now: PERMANENT_AT,
+    });
+    await expect(store.deleteProject(intent)).resolves.toBeUndefined();
     await expect(store.getProject(PROJECT_ID)).resolves.toBeNull();
     await expect(store.listProjects()).resolves.toEqual([]);
     expect(database.sourceBlobs.size).toBe(0);
     expect(database.sourceChunks.size).toBe(0);
     expect(database.edits.size).toBe(0);
-    await expect(store.deleteProject(PROJECT_ID)).rejects.toMatchObject({
+    await expect(store.deleteProject(intent)).rejects.toMatchObject({
       name: 'ProjectNotFoundError',
       projectId: PROJECT_ID,
     });
+  });
+
+  it('atomically copies project-owned blobs, chunks and remapped edit history', async () => {
+    const source = new MemoryProjectStore();
+    await source.createProject(project());
+    await source.putSourceBlob(PROJECT_ID, FILE_ID, new Blob(['hello']));
+    await source.replaceSourceChunks(
+      PROJECT_ID,
+      FILE_ID,
+      [chunk()],
+      1,
+      NEXT_UPDATED_AT,
+    );
+    await source.appendEdit(edit());
+    let sequence = 501;
+    const idFactory = () => {
+      const id =
+        `01900000-0000-7000-8000-${String(sequence).padStart(12, '0')}`;
+      sequence += 1;
+      return id;
+    };
+
+    const copied = await source.copyProject(PROJECT_ID, {
+      expectedVersion: 2,
+      now: EXPORT_AT,
+      idFactory,
+    });
+
+    expect(copied).toMatchObject({
+      version: 1,
+      createdAt: EXPORT_AT,
+      updatedAt: EXPORT_AT,
+      status: 'active',
+      statusBeforeTrash: null,
+      trashedAt: null,
+    });
+    expect(copied.id).not.toBe(PROJECT_ID);
+    expect(copied.sourceFiles[0]!.id).not.toBe(FILE_ID);
+    expect(copied.sourceChunks[0]).toMatchObject({
+      projectId: copied.id,
+      sourceFileId: copied.sourceFiles[0]!.id,
+      sourceFileVersion: 1,
+    });
+    expect(
+      await blobText(
+        await source.getSourceBlob(
+          copied.id,
+          copied.sourceFiles[0]!.id,
+        ),
+      ),
+    ).toBe('hello');
+    await expect(
+      source.getSourceChunks(copied.id, copied.sourceFiles[0]!.id),
+    ).resolves.toEqual(copied.sourceChunks);
+    const copiedEdits = await source.listEdits(copied.id);
+    expect(copiedEdits).toHaveLength(1);
+    expect(copiedEdits[0]).toMatchObject({
+      version: 1,
+      createdAt: EXPORT_AT,
+      updatedAt: EXPORT_AT,
+      projectId: copied.id,
+      projectVersion: 1,
+      kind: 'create',
+      after: {
+        projectId: copied.id,
+        sourceFileId: copied.sourceFiles[0]!.id,
+        sourceChunkId: copied.sourceChunks[0]!.id,
+        title: '课程路演',
+      },
+    });
+    await expect(source.getProject(PROJECT_ID)).resolves.toEqual(
+      projectWithChunks(),
+    );
+    await expect(
+      source.copyProject(PROJECT_ID, {
+        expectedVersion: 1,
+        now: PERMANENT_AT,
+        idFactory,
+      }),
+    ).rejects.toMatchObject({
+      name: 'ProjectLifecycleError',
+      code: 'VERSION_CONFLICT',
+      expectedVersion: 1,
+      currentVersion: 2,
+    });
+    await expect(source.listProjects()).resolves.toHaveLength(2);
   });
 
   it('rejects blobs and chunks that are not owned by the project source file', async () => {

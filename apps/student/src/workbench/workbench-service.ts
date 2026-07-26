@@ -21,6 +21,13 @@ import {
   type ProjectStore,
 } from './project-store.js';
 import {
+  activateProject as activateLifecycleProject,
+  archiveProject as archiveLifecycleProject,
+  requestPermanentDelete,
+  restoreProject as restoreLifecycleProject,
+  trashProject as trashLifecycleProject,
+} from './project-lifecycle.js';
+import {
   addOutlineNode as addNode,
   assertValidOutline,
   deleteOutlineNode as deleteNode,
@@ -292,6 +299,34 @@ export interface WorkbenchService {
   ): Promise<SourceIngestionResult>;
 }
 
+export interface WorkbenchProjectLifecycleService
+  extends WorkbenchService {
+  copyProject(
+    projectId: string,
+    expectedVersion: number,
+  ): Promise<Project>;
+  archiveProject(
+    projectId: string,
+    expectedVersion: number,
+  ): Promise<Project>;
+  activateProject(
+    projectId: string,
+    expectedVersion: number,
+  ): Promise<Project>;
+  trashProject(
+    projectId: string,
+    expectedVersion: number,
+  ): Promise<Project>;
+  restoreProject(
+    projectId: string,
+    expectedVersion: number,
+  ): Promise<Project>;
+  permanentlyDeleteProject(
+    projectId: string,
+    expectedVersion: number,
+  ): Promise<void>;
+}
+
 export type WorkbenchServiceInputErrorCode =
   | 'INVALID_LENGTH_TARGET'
   | 'INVALID_DURATION'
@@ -332,7 +367,7 @@ export interface CreateWorkbenchServiceOptions {
 
 export function createWorkbenchService(
   options: CreateWorkbenchServiceOptions,
-): WorkbenchService {
+): WorkbenchProjectLifecycleService {
   const cryptoProvider = options.cryptoProvider ?? globalThis.crypto;
   const now = options.now ?? (() => new Date());
   const idFactory =
@@ -354,7 +389,9 @@ const lazyPdfJsParser: PdfParserPort = {
   },
 };
 
-class DefaultWorkbenchService implements WorkbenchService {
+class DefaultWorkbenchService
+  implements WorkbenchProjectLifecycleService
+{
   constructor(
     private readonly store: ProjectStore,
     private readonly pdfParser: PdfParserPort,
@@ -378,6 +415,8 @@ class DefaultWorkbenchService implements WorkbenchService {
       updatedAt: timestamp,
       title: normalizedProjectTitle(input),
       status: 'active',
+      statusBeforeTrash: null,
+      trashedAt: null,
       taskDefinition: {
         id: this.idFactory(),
         version: 1,
@@ -406,7 +445,80 @@ class DefaultWorkbenchService implements WorkbenchService {
   }
 
   async deleteProject(projectId: string): Promise<void> {
-    await this.store.deleteProject(projectId);
+    const current = await this.requireProject(projectId);
+    await this.permanentlyDeleteProject(projectId, current.version);
+  }
+
+  async copyProject(
+    projectId: string,
+    expectedVersion: number,
+  ): Promise<Project> {
+    const current = await this.requireProject(projectId);
+    return this.store.copyProject(projectId, {
+      expectedVersion,
+      now: this.timestampAfter(current.updatedAt),
+      idFactory: this.idFactory,
+    });
+  }
+
+  async archiveProject(
+    projectId: string,
+    expectedVersion: number,
+  ): Promise<Project> {
+    const current = await this.requireProject(projectId);
+    const next = archiveLifecycleProject(current, {
+      expectedVersion,
+      now: this.timestampAfter(current.updatedAt),
+    });
+    return this.store.saveProject(next, expectedVersion);
+  }
+
+  async activateProject(
+    projectId: string,
+    expectedVersion: number,
+  ): Promise<Project> {
+    const current = await this.requireProject(projectId);
+    const next = activateLifecycleProject(current, {
+      expectedVersion,
+      now: this.timestampAfter(current.updatedAt),
+    });
+    return this.store.saveProject(next, expectedVersion);
+  }
+
+  async trashProject(
+    projectId: string,
+    expectedVersion: number,
+  ): Promise<Project> {
+    const current = await this.requireProject(projectId);
+    const next = trashLifecycleProject(current, {
+      expectedVersion,
+      now: this.timestampAfter(current.updatedAt),
+    });
+    return this.store.saveProject(next, expectedVersion);
+  }
+
+  async restoreProject(
+    projectId: string,
+    expectedVersion: number,
+  ): Promise<Project> {
+    const current = await this.requireProject(projectId);
+    const next = restoreLifecycleProject(current, {
+      expectedVersion,
+      now: this.timestampAfter(current.updatedAt),
+    });
+    return this.store.saveProject(next, expectedVersion);
+  }
+
+  async permanentlyDeleteProject(
+    projectId: string,
+    expectedVersion: number,
+  ): Promise<void> {
+    const current = await this.requireProject(projectId);
+    const intent = requestPermanentDelete(current, {
+      expectedVersion,
+      now: this.timestampAfter(current.updatedAt),
+    });
+    await this.store.deleteProject(intent);
   }
 
   async createEvidence(

@@ -1,6 +1,9 @@
 import { strToU8, zipSync } from 'fflate';
 import { describe, expect, it, vi } from 'vitest';
-import { MemoryProjectStore } from './project-store.js';
+import {
+  MemoryProjectStore,
+  ProjectVersionConflictError,
+} from './project-store.js';
 import {
   SourceParserPortError,
   type PdfParserPort,
@@ -12,7 +15,7 @@ import {
   parseDraftArtifactPayload,
   readDraftArtifactPayload,
   type WorkbenchProjectFormInput,
-  type WorkbenchService,
+  type WorkbenchProjectLifecycleService,
 } from './workbench-service.js';
 import type { DraftPage } from './draft-verification.js';
 
@@ -101,7 +104,7 @@ async function sha256(value: string): Promise<string> {
 
 async function serviceWithVerifiedEvidence(): Promise<{
   store: MemoryProjectStore;
-  service: WorkbenchService;
+  service: WorkbenchProjectLifecycleService;
   projectId: string;
   evidenceId: string;
 }> {
@@ -147,7 +150,7 @@ async function serviceWithVerifiedEvidence(): Promise<{
 
 async function serviceWithSelectedOutline(): Promise<{
   store: MemoryProjectStore;
-  service: WorkbenchService;
+  service: WorkbenchProjectLifecycleService;
   projectId: string;
   evidenceId: string;
   outlineId: string;
@@ -237,6 +240,8 @@ describe('WorkbenchService first-stage orchestration', () => {
       version: 1,
       title: '课程路演项目',
       status: 'active',
+      statusBeforeTrash: null,
+      trashedAt: null,
       taskDefinition: {
         taskName: '三页课程汇报',
         audience: '课程教师与同学',
@@ -273,7 +278,7 @@ describe('WorkbenchService first-stage orchestration', () => {
     await expect(service.listProjects()).resolves.toEqual([created]);
   });
 
-  it('deletes a local project through the persistent store boundary', async () => {
+  it('persists lifecycle transitions and permanently deletes only from trash', async () => {
     const store = new MemoryProjectStore();
     const service = createWorkbenchService({
       store,
@@ -282,12 +287,129 @@ describe('WorkbenchService first-stage orchestration', () => {
     });
     const created = await service.createProject(form());
 
-    await expect(service.deleteProject(created.id)).resolves.toBeUndefined();
+    const archived = await service.archiveProject(created.id, 1);
+    expect(archived).toMatchObject({
+      status: 'archived',
+      version: 2,
+      statusBeforeTrash: null,
+      trashedAt: null,
+    });
+    await expect(store.getProject(created.id)).resolves.toEqual(archived);
+
+    const active = await service.activateProject(created.id, 2);
+    expect(active).toMatchObject({ status: 'active', version: 3 });
+    const raced = await Promise.allSettled([
+      service.trashProject(created.id, 3),
+      service.trashProject(created.id, 3),
+    ]);
+    expect(raced.filter((result) => result.status === 'fulfilled')).toHaveLength(
+      1,
+    );
+    expect(raced.filter((result) => result.status === 'rejected')).toHaveLength(
+      1,
+    );
+    expect(
+      raced.find((result) => result.status === 'rejected'),
+    ).toMatchObject({
+      reason: expect.any(ProjectVersionConflictError),
+    });
+    const trashed = await store.getProject(created.id);
+    expect(trashed).toMatchObject({
+      status: 'trashed',
+      statusBeforeTrash: 'active',
+      version: 4,
+    });
+    if (trashed === null) {
+      throw new Error('expected persisted trashed project');
+    }
+    const restored = await service.restoreProject(created.id, 4);
+    expect(restored).toMatchObject({
+      status: 'active',
+      statusBeforeTrash: null,
+      trashedAt: null,
+      version: 5,
+    });
+    await expect(
+      service.permanentlyDeleteProject(created.id, 5),
+    ).rejects.toMatchObject({
+      name: 'ProjectLifecycleError',
+      code: 'INVALID_TRANSITION',
+    });
+    const trashedAgain = await service.trashProject(created.id, 5);
+    await expect(
+      service.permanentlyDeleteProject(
+        created.id,
+        trashedAgain.version,
+      ),
+    ).resolves.toBeUndefined();
     await expect(service.listProjects()).resolves.toEqual([]);
-    await expect(service.deleteProject(created.id)).rejects.toMatchObject({
+    await expect(
+      service.permanentlyDeleteProject(
+        created.id,
+        trashedAgain.version,
+      ),
+    ).rejects.toMatchObject({
       name: 'ProjectNotFoundError',
       projectId: created.id,
     });
+  });
+
+  it('copies a project through the store with source blobs, chunks and edit history', async () => {
+    const { store, service, projectId } =
+      await serviceWithVerifiedEvidence();
+    const source = await store.getProject(projectId);
+    if (source === null) {
+      throw new Error('expected source project');
+    }
+    await store.appendEdit({
+      id: '01900000-0000-7000-8000-000000000899',
+      version: 1,
+      createdAt: source.createdAt,
+      updatedAt: source.updatedAt,
+      projectId,
+      projectVersion: source.version,
+      kind: 'update',
+      path: '$.sourceFiles',
+      before: null,
+      after: {
+        projectId,
+        sourceFileId: source.sourceFiles[0]!.id,
+        sourceChunkId: source.sourceChunks[0]!.id,
+      },
+    });
+
+    const copied = await service.copyProject(projectId, source.version);
+
+    expect(copied).toMatchObject({
+      version: 1,
+      status: 'active',
+      statusBeforeTrash: null,
+      trashedAt: null,
+    });
+    expect(copied.id).not.toBe(projectId);
+    await expect(store.getProject(copied.id)).resolves.toEqual(copied);
+    expect(
+      await (
+        await store.getSourceBlob(
+          copied.id,
+          copied.sourceFiles[0]!.id,
+        )
+      )?.text()
+    ).toBe('%PDF-real-source');
+    await expect(
+      store.getSourceChunks(copied.id, copied.sourceFiles[0]!.id),
+    ).resolves.toEqual(copied.sourceChunks);
+    await expect(store.listEdits(copied.id)).resolves.toMatchObject([
+      {
+        projectId: copied.id,
+        projectVersion: 1,
+        after: {
+          projectId: copied.id,
+          sourceFileId: copied.sourceFiles[0]!.id,
+          sourceChunkId: copied.sourceChunks[0]!.id,
+        },
+      },
+    ]);
   });
 
   it('parses word targets and rejects ambiguous targets or rubric totals before persistence', async () => {

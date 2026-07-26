@@ -223,12 +223,15 @@ export interface VerificationResult extends VersionedEntity {
   summary: VerificationSummary;
 }
 
-export type ProjectStatus = 'active' | 'archived';
+export type ProjectStatus = 'active' | 'archived' | 'trashed';
+export type RestorableProjectStatus = Exclude<ProjectStatus, 'trashed'>;
 
 export interface Project extends VersionedEntity {
   schemaVersion: ProjectSchemaVersion;
   title: string;
   status: ProjectStatus;
+  statusBeforeTrash?: RestorableProjectStatus | null;
+  trashedAt?: IsoDateTime | null;
   taskDefinition: TaskDefinition;
   sourceFiles: SourceFile[];
   sourceChunks: SourceChunk[];
@@ -1497,14 +1500,52 @@ export function parseProject(input: unknown): Project {
     }
   }
 
+  const status = enumAt(object.status, `${path}.status`, [
+    'active',
+    'archived',
+    'trashed',
+  ] as const);
+  const statusBeforeTrash = nullableAt(
+    object.statusBeforeTrash ?? null,
+    (value, valuePath) =>
+      enumAt(value, valuePath, ['active', 'archived'] as const),
+    `${path}.statusBeforeTrash`,
+  );
+  const trashedAt = nullableAt(
+    object.trashedAt ?? null,
+    dateTimeAt,
+    `${path}.trashedAt`,
+  );
+  if (status === 'trashed') {
+    if (statusBeforeTrash === null || trashedAt === null) {
+      fail(
+        `${path}.statusBeforeTrash`,
+        'trashed projects require statusBeforeTrash and trashedAt',
+      );
+    }
+    if (
+      Date.parse(trashedAt) < Date.parse(entity.createdAt) ||
+      Date.parse(trashedAt) > Date.parse(entity.updatedAt)
+    ) {
+      fail(
+        `${path}.trashedAt`,
+        'must remain within project creation and update timestamps',
+      );
+    }
+  } else if (statusBeforeTrash !== null || trashedAt !== null) {
+    fail(
+      `${path}.statusBeforeTrash`,
+      'only trashed projects may retain trash metadata',
+    );
+  }
+
   return {
     schemaVersion: PROJECT_SCHEMA_VERSION,
     ...entity,
     title: stringAt(object.title, `${path}.title`, { max: 1_000 }),
-    status: enumAt(object.status, `${path}.status`, [
-      'active',
-      'archived',
-    ] as const),
+    status,
+    statusBeforeTrash,
+    trashedAt,
     taskDefinition,
     sourceFiles,
     sourceChunks,
