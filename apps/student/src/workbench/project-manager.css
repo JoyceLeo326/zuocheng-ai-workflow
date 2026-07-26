@@ -1,0 +1,669 @@
+.project-manager {
+  --manager-bg: var(--ink, #0a0b0a);
+  --manager-panel: var(--ink-raised, #111210);
+  --manager-soft: var(--ink-soft, #171815);
+  --manager-text: var(--paper, #f5f0e4);
+  --manager-muted: var(--paper-muted, #b9b6aa);
+  --manager-faint: var(--paper-faint, #85867e);
+  --manager-signal: var(--signal, #c9ff3f);
+  --manager-focus: var(--focus, #9bd5ff);
+  --manager-danger: var(--danger, #ff786f);
+  --manager-info: var(--info, #8ecbff);
+  --manager-line: var(--line, #34362f);
+  --manager-line-strong: var(--line-bright, #565950);
+  width: 100%;
+  min-width: 0;
+  color: var(--manager-text);
+  background:
+    linear-gradient(145deg, rgb(201 255 63 / 3.5%), transparent 30rem),
+    var(--manager-bg);
+}
+
+.project-manager *,
+.project-manager *::before,
+.project-manager *::after {
+  box-sizing: border-box;
+}
+
+.project-manager__hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: clamp(1.5rem, 4vw, 4rem);
+  align-items: end;
+  padding: clamp(1.35rem, 3vw, 2.6rem);
+  border: 1px solid var(--manager-line);
+  background:
+    linear-gradient(110deg, rgb(201 255 63 / 8%), transparent 48%),
+    var(--manager-panel);
+}
+
+.project-manager__eyebrow {
+  margin: 0;
+  color: var(--manager-signal);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 0.68rem;
+  font-weight: 850;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.project-manager__hero h2 {
+  margin: 0.55rem 0 0.75rem;
+  color: var(--manager-text);
+  font-size: clamp(1.85rem, 4vw, 3.5rem);
+  line-height: 0.98;
+  letter-spacing: -0.045em;
+}
+
+.project-manager__hero > div > p:last-child {
+  max-width: 46rem;
+  margin: 0;
+  color: var(--manager-muted);
+  font-size: 0.84rem;
+  line-height: 1.65;
+}
+
+.project-manager__import {
+  position: relative;
+  display: inline-grid;
+  min-width: 11rem;
+  min-height: 2.9rem;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid var(--manager-signal);
+  color: #111708;
+  background: var(--manager-signal);
+  font-size: 0.74rem;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.project-manager__import:hover {
+  border-color: #e2ff96;
+  background: #e2ff96;
+}
+
+.project-manager__import input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.project-manager__import:focus-within {
+  outline: 3px solid var(--manager-focus);
+  outline-offset: 3px;
+}
+
+.project-manager__import:has(input:disabled) {
+  border-color: var(--manager-line);
+  color: var(--manager-faint);
+  background: var(--manager-soft);
+  cursor: not-allowed;
+}
+
+.project-manager__controls {
+  display: grid;
+  grid-template-columns: minmax(14rem, 1fr) minmax(18rem, 1.25fr);
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.project-manager__search,
+.project-manager__create {
+  padding: 1rem;
+  border: 1px solid var(--manager-line);
+  background: var(--manager-panel);
+}
+
+.project-manager__search,
+.project-manager__create label {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.project-manager__search > span,
+.project-manager__create label > span,
+.project-manager__confirmation-input > span {
+  color: var(--manager-muted);
+  font-size: 0.68rem;
+  font-weight: 750;
+}
+
+.project-manager__create {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.7rem;
+  align-items: end;
+}
+
+.project-manager input[type='search'],
+.project-manager input[type='text'] {
+  width: 100%;
+  min-width: 0;
+  min-height: 2.65rem;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--manager-line-strong);
+  border-radius: 0;
+  color: var(--manager-text);
+  background: #0c0d0b;
+  font: inherit;
+  font-size: 0.75rem;
+}
+
+.project-manager input::placeholder {
+  color: var(--manager-faint);
+  opacity: 1;
+}
+
+.project-manager button,
+.project-manager__download {
+  min-height: 2.65rem;
+  padding: 0.65rem 0.8rem;
+  border: 1px solid var(--manager-line-strong);
+  border-radius: 0;
+  color: var(--manager-text);
+  background: transparent;
+  font: inherit;
+  font-size: 0.7rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.project-manager__create button {
+  border-color: var(--manager-signal);
+  color: #111708;
+  background: var(--manager-signal);
+}
+
+.project-manager button:hover,
+.project-manager__download:hover {
+  border-color: var(--manager-signal);
+  color: #111708;
+  background: var(--manager-signal);
+}
+
+.project-manager button:disabled {
+  border-color: var(--manager-line);
+  color: var(--manager-faint);
+  background: var(--manager-soft);
+  cursor: not-allowed;
+}
+
+.project-manager input:focus-visible,
+.project-manager button:focus-visible,
+.project-manager a:focus-visible {
+  outline: 3px solid var(--manager-focus);
+  outline-offset: 3px;
+}
+
+.project-manager__error {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 1rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid #684139;
+  color: #ffd2ce;
+  background: #201310;
+}
+
+.project-manager__error > div {
+  display: grid;
+  gap: 0.22rem;
+}
+
+.project-manager__error strong {
+  color: var(--manager-danger);
+  font-size: 0.72rem;
+}
+
+.project-manager__error span {
+  font-size: 0.7rem;
+  line-height: 1.45;
+}
+
+.project-manager__error button {
+  flex: 0 0 auto;
+  min-height: 2.2rem;
+}
+
+.project-manager__tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 1rem;
+  border: 1px solid var(--manager-line);
+  background: var(--manager-panel);
+}
+
+.project-manager__tabs button {
+  display: flex;
+  min-height: 3.35rem;
+  gap: 0.75rem;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-right: 1px solid var(--manager-line);
+  color: var(--manager-muted);
+}
+
+.project-manager__tabs button:last-child {
+  border-right: 0;
+}
+
+.project-manager__tabs button[aria-selected='true'] {
+  color: var(--manager-text);
+  background: #151a10;
+  box-shadow: inset 0 -3px 0 var(--manager-signal);
+}
+
+.project-manager__tabs button strong {
+  display: inline-grid;
+  min-width: 1.55rem;
+  min-height: 1.55rem;
+  place-items: center;
+  border: 1px solid var(--manager-line);
+  color: var(--manager-signal);
+  background: #0c0d0b;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 0.62rem;
+}
+
+.project-manager__panel {
+  margin-top: 1rem;
+  border: 1px solid var(--manager-line);
+  background: var(--manager-panel);
+}
+
+.project-manager__panel[hidden] {
+  display: none;
+}
+
+.project-manager__panel-heading {
+  display: flex;
+  gap: 1rem;
+  align-items: end;
+  justify-content: space-between;
+  padding: 1rem 1.15rem;
+  border-bottom: 1px solid var(--manager-line);
+}
+
+.project-manager__panel-heading h3 {
+  margin: 0.32rem 0 0;
+  color: var(--manager-text);
+  font-size: 1.15rem;
+}
+
+.project-manager__panel-heading > span {
+  color: var(--manager-faint);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 0.63rem;
+}
+
+.project-manager__grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.project-manager__card {
+  display: flex;
+  min-width: 0;
+  min-height: 20rem;
+  flex-direction: column;
+  padding: 1rem;
+  border-right: 1px solid var(--manager-line);
+  border-bottom: 1px solid var(--manager-line);
+  background:
+    linear-gradient(150deg, rgb(201 255 63 / 2.5%), transparent 14rem),
+    #0d0e0c;
+}
+
+.project-manager__card:nth-child(3n) {
+  border-right: 0;
+}
+
+.project-manager__card:nth-last-child(-n + 3) {
+  border-bottom: 0;
+}
+
+.project-manager__card--archived {
+  background:
+    linear-gradient(150deg, rgb(142 203 255 / 3%), transparent 14rem),
+    #0d0e0c;
+}
+
+.project-manager__card--trashed {
+  background:
+    linear-gradient(150deg, rgb(255 120 111 / 3%), transparent 14rem),
+    #0d0e0c;
+}
+
+.project-manager__card-heading {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.project-manager__status {
+  padding: 0.3rem 0.42rem;
+  border: 1px solid #526536;
+  color: var(--manager-signal);
+  background: #13190e;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 0.58rem;
+  font-weight: 850;
+}
+
+.project-manager__card--archived .project-manager__status {
+  border-color: #415b70;
+  color: var(--manager-info);
+  background: #101820;
+}
+
+.project-manager__card--trashed .project-manager__status {
+  border-color: #684139;
+  color: var(--manager-danger);
+  background: #201310;
+}
+
+.project-manager__card-heading time {
+  color: var(--manager-faint);
+  font-size: 0.6rem;
+}
+
+.project-manager__card h4 {
+  min-height: 3.2rem;
+  margin: 1rem 0 0;
+  overflow-wrap: anywhere;
+  color: var(--manager-text);
+  font-size: 1.05rem;
+  line-height: 1.4;
+}
+
+.project-manager__card dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0.9rem 0 0;
+  border: 1px solid var(--manager-line);
+}
+
+.project-manager__card dl > div {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: space-between;
+  padding: 0.55rem;
+}
+
+.project-manager__card dl > div + div {
+  border-left: 1px solid var(--manager-line);
+}
+
+.project-manager__card dt,
+.project-manager__card dd {
+  margin: 0;
+  font-size: 0.63rem;
+}
+
+.project-manager__card dt {
+  color: var(--manager-faint);
+}
+
+.project-manager__card dd {
+  color: var(--manager-muted);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.project-manager__download {
+  display: grid;
+  place-items: center;
+  margin-top: 0.8rem;
+  border-color: #526536;
+  color: var(--manager-signal);
+  text-align: center;
+  text-decoration: none;
+}
+
+.project-manager__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-top: auto;
+  padding-top: 1rem;
+}
+
+.project-manager__actions button {
+  min-height: 2.25rem;
+  flex: 1 1 auto;
+  padding: 0.5rem 0.65rem;
+  font-size: 0.64rem;
+}
+
+.project-manager__actions .project-manager__action-primary {
+  border-color: var(--manager-signal);
+}
+
+.project-manager__actions .project-manager__action-danger {
+  border-color: #684139;
+  color: #ffaaa3;
+}
+
+.project-manager__actions .project-manager__action-danger:hover {
+  border-color: var(--manager-danger);
+  color: #1b0807;
+  background: var(--manager-danger);
+}
+
+.project-manager__empty {
+  display: grid;
+  min-height: 15rem;
+  place-items: center;
+  align-content: center;
+  padding: 2rem;
+  text-align: center;
+}
+
+.project-manager__empty strong {
+  color: var(--manager-text);
+  font-size: 0.9rem;
+}
+
+.project-manager__empty p {
+  max-width: 28rem;
+  margin: 0.45rem 0 0;
+  color: var(--manager-faint);
+  font-size: 0.7rem;
+  line-height: 1.5;
+}
+
+.project-manager__confirmation {
+  position: sticky;
+  z-index: 4;
+  bottom: 0.75rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(15rem, 0.65fr) auto;
+  gap: 1rem;
+  align-items: end;
+  margin: 1rem;
+  padding: 1rem;
+  border: 1px solid #684139;
+  box-shadow: 0 1rem 3rem rgb(0 0 0 / 55%);
+  background: #201310;
+}
+
+.project-manager__confirmation--archive {
+  border-color: #526536;
+  background: #13190e;
+}
+
+.project-manager__confirmation-copy > p {
+  margin: 0;
+  color: var(--manager-danger);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 0.62rem;
+  font-weight: 850;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.project-manager__confirmation--archive
+  .project-manager__confirmation-copy
+  > p {
+  color: var(--manager-signal);
+}
+
+.project-manager__confirmation-copy h3 {
+  margin: 0.35rem 0 0.4rem;
+  color: var(--manager-text);
+  font-size: 1rem;
+}
+
+.project-manager__confirmation-copy span {
+  color: var(--manager-muted);
+  font-size: 0.7rem;
+  line-height: 1.5;
+}
+
+.project-manager__confirmation-input {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.project-manager__confirmation-actions {
+  display: flex;
+  gap: 0.55rem;
+}
+
+.project-manager__confirmation-actions
+  .project-manager__confirm-danger {
+  border-color: var(--manager-danger);
+  color: #1b0807;
+  background: var(--manager-danger);
+}
+
+.project-manager__confirmation-actions
+  .project-manager__confirm-primary {
+  border-color: var(--manager-signal);
+  color: #111708;
+  background: var(--manager-signal);
+}
+
+@media (max-width: 70rem) {
+  .project-manager__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .project-manager__card:nth-child(3n) {
+    border-right: 1px solid var(--manager-line);
+  }
+
+  .project-manager__card:nth-child(2n) {
+    border-right: 0;
+  }
+
+  .project-manager__card:nth-last-child(-n + 3) {
+    border-bottom: 1px solid var(--manager-line);
+  }
+
+  .project-manager__card:nth-last-child(-n + 2) {
+    border-bottom: 0;
+  }
+
+  .project-manager__confirmation {
+    grid-template-columns: minmax(0, 1fr) minmax(15rem, 0.8fr);
+  }
+
+  .project-manager__confirmation-actions {
+    grid-column: 1 / -1;
+    justify-content: end;
+  }
+}
+
+@media (max-width: 48rem) {
+  .project-manager__hero,
+  .project-manager__controls {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .project-manager__import {
+    width: 100%;
+  }
+
+  .project-manager__confirmation {
+    position: static;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .project-manager__confirmation-actions {
+    grid-column: auto;
+  }
+}
+
+@media (max-width: 36rem) {
+  .project-manager__hero,
+  .project-manager__search,
+  .project-manager__create,
+  .project-manager__panel-heading,
+  .project-manager__card {
+    padding: 0.85rem;
+  }
+
+  .project-manager__create,
+  .project-manager__grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .project-manager__tabs button {
+    min-height: 3.8rem;
+    flex-direction: column;
+    gap: 0.3rem;
+  }
+
+  .project-manager__grid .project-manager__card,
+  .project-manager__grid .project-manager__card:nth-child(2n),
+  .project-manager__grid .project-manager__card:nth-child(3n),
+  .project-manager__grid .project-manager__card:nth-last-child(-n + 2),
+  .project-manager__grid .project-manager__card:nth-last-child(-n + 3) {
+    border-right: 0;
+    border-bottom: 1px solid var(--manager-line);
+  }
+
+  .project-manager__grid .project-manager__card:last-child {
+    border-bottom: 0;
+  }
+
+  .project-manager__confirmation {
+    margin: 1rem 0;
+  }
+
+  .project-manager__confirmation-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .project-manager *,
+  .project-manager *::before,
+  .project-manager *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@media (forced-colors: active) {
+  .project-manager__status,
+  .project-manager__error,
+  .project-manager__confirmation {
+    border-color: CanvasText;
+  }
+
+  .project-manager button,
+  .project-manager__download,
+  .project-manager__import {
+    border: 1px solid ButtonText;
+  }
+}

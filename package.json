@@ -1,0 +1,30 @@
+{
+  "name": "zuocheng-platform",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@11.9.0",
+  "engines": {
+    "node": ">=24.14.0 <25"
+  },
+  "scripts": {
+    "build": "pnpm -r build",
+    "build:vercel": "pnpm build:vercel:marketing && pnpm build:vercel:student && pnpm build:vercel:admin && node scripts/assemble-vercel.mjs && pnpm verify:vercel-bundle",
+    "build:vercel:admin": "pnpm --filter @zuocheng/admin exec vite build --base=/admin/",
+    "build:vercel:marketing": "pnpm --filter @zuocheng/marketing build",
+    "build:vercel:student": "pnpm --filter @zuocheng/student exec vite build --base=/app/",
+    "dev": "pnpm --parallel --filter './apps/*' --filter './services/*' dev",
+    "lint": "eslint . --max-warnings=0",
+    "pretest": "pnpm --filter @zuocheng/contracts build && pnpm --filter @zuocheng/config build && pnpm --filter @zuocheng/db build && pnpm --filter @zuocheng/marketing build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test && node --test qa/*.mjs",
+    "verify:vercel-bundle": "node scripts/verify-vercel-bundle.mjs",
+    "verify": "pnpm lint && pnpm typecheck && pnpm test && pnpm build"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "24.13.3",
+    "eslint": "10.7.0",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.65.0"
+  }
+}

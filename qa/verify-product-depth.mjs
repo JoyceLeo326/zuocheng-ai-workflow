@@ -7,10 +7,11 @@ import { fileURLToPath } from "node:url";
 
 const qaDir = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(qaDir, "..");
-const indexHtml = readFileSync(path.join(rootDir, "index.html"), "utf8");
-const script = readFileSync(path.join(rootDir, "script.js"), "utf8");
+const marketingDir = path.join(rootDir, "apps", "marketing");
+const indexHtml = readFileSync(path.join(marketingDir, "index.html"), "utf8");
+const script = readFileSync(path.join(marketingDir, "script.js"), "utf8");
 const readme = readFileSync(path.join(rootDir, "README.md"), "utf8");
-const plannerPath = path.join(rootDir, "planner.js");
+const plannerPath = path.join(marketingDir, "planner.js");
 const require = createRequire(import.meta.url);
 
 function countClass(html, className) {
@@ -25,15 +26,11 @@ function countAttribute(html, attributeName) {
   return (html.match(new RegExp(`\\b${attributeName}(?:\\s*=|\\s|>)`, "gi")) ?? []).length;
 }
 
-test("hero leads with a complete local-first task launchpad", () => {
+test("hero includes a complete task launchpad and real workbench route", () => {
   const launchpadIndex = indexHtml.indexOf("data-task-launchpad");
-  const marketingCopyIndex = indexHtml.indexOf('class="hero-copy');
 
   assert.ok(launchpadIndex > -1, "hero should include the task launchpad");
-  assert.ok(
-    launchpadIndex < marketingCopyIndex,
-    "interactive launchpad should precede the marketing-led hero copy",
-  );
+  assert.match(indexHtml, /href=["']\/app\/["'][^>]*>[^<]*进入工作台/i);
   assert.match(indexHtml, /<form\b[^>]*\bdata-task-form\b/i);
 
   for (const [name, label] of [
@@ -51,8 +48,8 @@ test("hero leads with a complete local-first task launchpad", () => {
   assert.match(indexHtml, /data-reset-task/i, "launchpad needs a reset action");
   assert.match(
     indexHtml,
-    /本地规则[^。；<]*(?:生成|规划)[^。；<]*(?:不是|并非)\s*AI/i,
-    "launchpad must visibly disclose that the plan is generated locally by rules, not AI",
+    /计划按规则生成，不含 AI 内容建议/,
+    "launchpad must accurately distinguish its rule-generated plan from AI content",
   );
 });
 
@@ -141,27 +138,22 @@ test("launchpad persists per-day progress and supports download plus reset", () 
   assert.match(script, /\.md["'`]/, "download should use a Markdown filename");
 });
 
-test("legacy authenticity and interactions remain intact", () => {
-  assert.match(indexHtml, /个人作品案例/);
-  assert.match(indexHtml, /教学演示/);
-  assert.match(
+test("student-facing product story and interactions remain intact", () => {
+  assert.match(indexHtml, /开始一项真实任务/);
+  assert.match(indexHtml, /进入工作台/);
+  assert.match(indexHtml, /登录/);
+  assert.match(indexHtml, /注册/);
+  assert.doesNotMatch(
     indexHtml,
-    /问卷、访谈、反馈(?:与|和)漏斗数字[^。；]*不代表真实用户数据(?:或|，也不代表)既有运营成绩/,
+    /传播物料|上线计划|14\s*天上线|增长与迭代|真实性审计|独立作品|本地优先|无需登录|项目所有者|固定成本|零自动账单|成本策略/,
   );
   assert.equal(countClass(indexHtml, "day-tab"), 7);
-  assert.equal(countAttribute(indexHtml, "data-machine-button"), 1);
-  assert.equal(countClass(indexHtml, "work-step"), 5);
-  assert.equal(countAttribute(indexHtml, "data-work-view"), 5);
-  assert.equal(countAttribute(indexHtml, "data-source"), 3);
-  assert.equal(countClass(indexHtml, "slide-thumb"), 3);
-  assert.equal(countAttribute(indexHtml, "data-launch-day"), 14);
-  assert.equal(countClass(indexHtml, "poster"), 3);
-  assert.equal(countClass(indexHtml, "story-frame"), 6);
-  assert.equal(countClass(indexHtml, "copy-tab"), 3);
-  assert.equal(countClass(indexHtml, "experiment-button"), 2);
-  assert.equal(countAttribute(indexHtml, "data-feedback"), 3);
+  assert.equal(countAttribute(indexHtml, "data-workflow-stage"), 6);
+  assert.ok(countAttribute(indexHtml, "data-preview-tab") >= 4);
+  assert.equal(countAttribute(indexHtml, "data-preview-panel"), countAttribute(indexHtml, "data-preview-tab"));
   assert.equal(countClass(indexHtml, "curriculum-card"), 6);
-  assert.equal((indexHtml.match(/<details\b/gi) ?? []).length, 5);
+  assert.ok((indexHtml.match(/<details\b/gi) ?? []).length >= 5);
+  assert.match(script, /ArrowLeft|ArrowRight/, "tab interfaces need keyboard navigation");
 });
 
 test("README documents local planning, persistence, export, reset, and boundaries", () => {

@@ -1,0 +1,81 @@
+name: zuocheng
+
+x-zero-owner-cost: &zero-owner-cost
+  COST_MODE: zero_owner_cost
+  OWNER_BILLING_MODE: deny
+  ALLOW_OWNER_BILLED_PROVIDER: "false"
+  ALLOW_AUTO_TOPUP: "false"
+  ALLOW_AUTO_UPGRADE: "false"
+  PROVIDER_CREDENTIAL_SOURCE: tenant_only
+  REMOTE_UNKNOWN_QUOTA: deny
+  STORAGE_DEFAULT: tenant_byos
+  REQUIRE_LEDGER_RESERVATION: "true"
+  TENANT_CONTEXT_REQUIRED: "true"
+
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE:?Use a customer-reviewed PostgreSQL image digest}
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-zuocheng}
+      POSTGRES_USER: ${POSTGRES_USER:-zuocheng}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set a customer-managed database password}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks: [backend]
+
+  api:
+    image: ${ZUOCHENG_API_IMAGE:?Use a customer registry image digest}
+    restart: unless-stopped
+    env_file: .env.production
+    environment:
+      <<: *zero-owner-cost
+      PORT: 3000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-zuocheng}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-zuocheng}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/livez').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    ports:
+      - "${API_BIND_ADDRESS:-127.0.0.1}:${API_PORT:-3000}:3000"
+    networks: [backend]
+
+  worker:
+    image: ${ZUOCHENG_WORKER_IMAGE:?Use a customer registry image digest}
+    restart: unless-stopped
+    env_file: .env.production
+    environment:
+      <<: *zero-owner-cost
+      DATABASE_URL: postgresql://${POSTGRES_USER:-zuocheng}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-zuocheng}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "process.kill(1,0)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    networks: [backend]
+
+networks:
+  backend:
+    internal: true
+
+volumes:
+  postgres-data:

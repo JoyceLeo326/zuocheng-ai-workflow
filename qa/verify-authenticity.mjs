@@ -5,9 +5,10 @@ import { fileURLToPath } from "node:url";
 
 const qaDir = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(qaDir, "..");
-const indexPath = path.join(rootDir, "index.html");
+const marketingDir = path.join(rootDir, "apps", "marketing");
+const indexPath = path.join(marketingDir, "index.html");
 const readmePath = path.join(rootDir, "README.md");
-const scriptPath = path.join(rootDir, "script.js");
+const scriptPath = path.join(marketingDir, "script.js");
 
 const indexHtml = readFileSync(indexPath, "utf8");
 const readme = readFileSync(readmePath, "utf8");
@@ -47,26 +48,39 @@ function countTagWithClass(html, tagName, className) {
 
 const publicPageText = visibleText(indexHtml);
 
-assert.match(publicPageText, /个人作品案例/, "首页需清楚可见地声明这是个人作品案例");
-assert.match(publicPageText, /教学演示/, "首页需清楚可见地声明这是教学演示");
-assert.match(
-  publicPageText,
-  /问卷、访谈、反馈(?:与|和)漏斗数字[^。；]*不代表真实用户数据(?:或|，也不代表)既有运营成绩/,
-  "首页需明确说明问卷、访谈、反馈、漏斗数字不代表真实用户数据或既有运营成绩",
-);
+assert.match(publicPageText, /开始一项真实任务/, "首页首屏需提供直接开始任务的入口");
+assert.match(publicPageText, /进入工作台/, "首页需提供真实工作台入口");
+assert.match(publicPageText, /登录/, "页头需保留可选登录入口");
+assert.match(publicPageText, /注册/, "页头需保留可选注册入口");
+assert.match(publicPageText, /7 天起步/, "首页需提供 7 天课程入口");
+assert.match(publicPageText, /18 课/, "首页需提供 18 课课程入口");
+assert.match(publicPageText, /常见问题/, "首页需提供常见问题");
+
+for (const [pattern, label] of [
+  [/传播物料/, "传播物料"],
+  [/上线计划|14\s*天上线/, "上线计划"],
+  [/增长与迭代|增长验证|目标漏斗/, "增长与迭代"],
+  [/真实性(?:审计|边界)|独立作品|产品说明/, "作品复盘说明"],
+  [/本地优先|无需登录|账号稍后再说/, "实现或账号解释"],
+  [/项目所有者|固定成本|零自动账单|成本策略|零成本/, "内部成本约束"],
+  [/内部架构|产品架构/, "内部架构"],
+  [/课程反馈|运营数字|真实统计/, "运营复盘"],
+]) {
+  assert.doesNotMatch(publicPageText, pattern, `面向学生的首页不得展示${label}`);
+}
 assert.match(readme, /^#{1,6}\s+真实性边界\s*$/m, "README 需包含“真实性边界”章节");
 
 assert.equal(countClass(indexHtml, "day-tab"), 7, "应保留 7 个 .day-tab");
-assert.equal(countAttribute(indexHtml, "data-launch-day"), 14, "应保留 14 个 data-launch-day");
-assert.equal(countTagWithClass(indexHtml, "article", "poster"), 3, "应保留 3 个 poster article");
-assert.equal(countClass(indexHtml, "story-frame"), 6, "应保留 6 个 .story-frame");
-assert.equal(countClass(indexHtml, "copy-tab"), 3, "应保留 3 个 .copy-tab");
+assert.equal(countAttribute(indexHtml, "data-workflow-stage"), 6, "应展示完整六阶段工作流");
+assert.ok(countAttribute(indexHtml, "data-preview-tab") >= 4, "应提供至少四个可交互功能预览");
 assert.equal(countClass(indexHtml, "curriculum-card"), 6, "应保留 6 个 .curriculum-card");
+assert.ok((indexHtml.match(/<details\b/gi) ?? []).length >= 5, "应至少提供五项常见问题");
 
 const localReferences = [...indexHtml.matchAll(/\b(?:src|href)\s*=\s*["']([^"']+)["']/gi)]
   .map((match) => match[1].trim())
   .filter((reference) =>
     reference &&
+    !reference.startsWith("/app/") &&
     !reference.startsWith("#") &&
     !/^(?:[a-z][a-z\d+.-]*:)?\/\//i.test(reference) &&
     !/^(?:data|mailto|tel|javascript):/i.test(reference)
@@ -74,9 +88,9 @@ const localReferences = [...indexHtml.matchAll(/\b(?:src|href)\s*=\s*["']([^"']+
 
 for (const reference of new Set(localReferences)) {
   const cleanReference = decodeURIComponent(reference.split(/[?#]/, 1)[0]);
-  const localPath = path.resolve(rootDir, cleanReference.replace(/^[/\\]+/, ""));
+  const localPath = path.resolve(marketingDir, cleanReference.replace(/^[/\\]+/, ""));
   assert.ok(
-    localPath === rootDir || localPath.startsWith(`${rootDir}${path.sep}`),
+    localPath === marketingDir || localPath.startsWith(`${marketingDir}${path.sep}`),
     `本地资源引用不可越出项目目录：${reference}`,
   );
   assert.ok(existsSync(localPath), `index.html 引用的本地文件不存在：${reference}`);

@@ -1,0 +1,13 @@
+.git
+.github
+.worktrees
+**/node_modules
+**/dist
+coverage
+playwright-report
+test-results
+.env
+.env.*
+!.env.example
+!deploy/.env.production.example
+

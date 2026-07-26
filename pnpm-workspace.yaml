@@ -1,0 +1,11 @@
+packages:
+  - apps/*
+  - services/*
+  - packages/*
+
+allowBuilds:
+  esbuild: true
+  tesseract.js: false
+
+minimumReleaseAgeExclude:
+  - '@vitejs/plugin-react@6.0.4'

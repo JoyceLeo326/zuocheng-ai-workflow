@@ -7,12 +7,13 @@ import { fileURLToPath } from "node:url";
 
 const qaDir = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(qaDir, "..");
+const marketingDir = path.join(rootDir, "apps", "marketing");
 const require = createRequire(import.meta.url);
-const indexHtml = readFileSync(path.join(rootDir, "index.html"), "utf8");
-const script = readFileSync(path.join(rootDir, "script.js"), "utf8");
+const indexHtml = readFileSync(path.join(marketingDir, "index.html"), "utf8");
+const script = readFileSync(path.join(marketingDir, "script.js"), "utf8");
 const readme = readFileSync(path.join(rootDir, "README.md"), "utf8");
 const envPath = path.join(rootDir, ".env.example");
-const policyPath = path.join(rootDir, "cost-policy.js");
+const policyPath = path.join(marketingDir, "cost-policy.js");
 const docsPath = path.join(rootDir, "docs", "zero-owner-cost.md");
 
 test("zero owner cost is the real default configuration", () => {
@@ -81,18 +82,14 @@ test("remote quota is fail-closed when exhausted or unverifiable", () => {
   }).allowed, true);
 });
 
-test("public UI visibly states cost and demonstration boundaries without fake usage", () => {
-  const boundaryIndex = indexHtml.indexOf("data-cost-boundary");
-  const formIndex = indexHtml.indexOf("data-task-form");
-  assert.ok(boundaryIndex > -1 && boundaryIndex < formIndex, "cost boundary should precede the product form");
-  assert.match(indexHtml, /项目所有者[^。<]*(?:固定成本\s*0|零固定成本)/);
-  assert.match(indexHtml, /(?:零自动账单|不启用自动账单)/);
-  assert.match(indexHtml, /本地\s*0\s*成本/);
-  assert.match(indexHtml, /用量[^。<]*不适用/);
-  assert.match(indexHtml, /个人非商业作品演示/);
-  assert.match(indexHtml, /<script\s+src=["']cost-policy\.js["']><\/script>/i);
-  assert.match(script, /window\.ZuochengCostPolicy/);
-  assert.match(script, /createCostPolicy\(/);
+test("public UI keeps internal cost controls out of the user experience", () => {
+  assert.doesNotMatch(indexHtml, /data-cost-boundary/);
+  assert.doesNotMatch(indexHtml, /项目所有者|固定成本|零自动账单|成本策略/);
+  assert.doesNotMatch(
+    indexHtml,
+    /<script\s+src=["']cost-policy\.js["']><\/script>/i,
+  );
+  assert.doesNotMatch(script, /window\.ZuochengCostPolicy|createCostPolicy\(/);
   assert.doesNotMatch(script, /\bfetch\s*\(|XMLHttpRequest|WebSocket\s*\(/);
 });
 
