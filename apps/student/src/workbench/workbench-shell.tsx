@@ -122,7 +122,10 @@ function errorMessage(reason: unknown): string {
   ) {
     const messages: Record<string, string> = {
       CORRUPT_PDF: 'PDF 文件已损坏，请更换后重试。',
+      CORRUPT_OOXML: 'Office 文件已损坏，请更换后重试。',
       EMPTY_FILE: '文件内容为空，请更换文件。',
+      EMPTY_OOXML_TEXT: 'Office 文件中没有可提取的正文。',
+      ENCRYPTED_OOXML: '加密的 Office 文件需要解除密码后再添加。',
       FILE_TOO_LARGE: '文件超过 50 MB，请压缩后重试。',
       MIME_EXTENSION_MISMATCH: '文件类型与扩展名不一致。',
       OCR_REQUIRED: '该文件没有可提取文字，需要先完成文字识别。',
