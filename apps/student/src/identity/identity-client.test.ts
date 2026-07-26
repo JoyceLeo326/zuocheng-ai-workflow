@@ -71,10 +71,10 @@ describe('identity API client', () => {
         });
       }
       if (url.endsWith('/sessions')) {
-        return jsonResponse(200, []);
+        return jsonResponse(200, { data: [] });
       }
       if (url.endsWith('/devices')) {
-        return jsonResponse(200, []);
+        return jsonResponse(200, { data: [] });
       }
       if (url.endsWith('/exports')) {
         return jsonResponse(202, {
@@ -140,8 +140,8 @@ describe('identity API client', () => {
       password: 'correct horse battery staple',
     });
     await client.startOAuth('google', { returnTo: '/account/security' });
-    await client.listSessions();
-    await client.listDevices();
+    await expect(client.listSessions()).resolves.toEqual([]);
+    await expect(client.listDevices()).resolves.toEqual([]);
     const recentAuth = await client.verifyRecentPassword({
       password: 'correct horse battery staple',
     });

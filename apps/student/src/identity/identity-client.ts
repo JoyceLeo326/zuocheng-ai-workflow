@@ -26,7 +26,7 @@ export interface IdentityDevice {
 
 export interface AccountExport {
   id: string;
-  status: 'pending' | 'processing' | 'completed' | 'failed' | 'expired';
+  status: 'pending' | 'processing' | 'ready' | 'failed' | 'expired';
   requestedAt: string;
   completedAt: string | null;
   expiresAt: string | null;
@@ -294,8 +294,12 @@ export function createIdentityClient(
         mutation: true,
       }),
     getCurrentSession: () => request('/v1/auth/session/current'),
-    listSessions: () => request('/v1/auth/sessions'),
-    listDevices: () => request('/v1/auth/devices'),
+    listSessions: async () =>
+      (
+        await request<{ data: IdentitySession[] }>('/v1/auth/sessions')
+      ).data,
+    listDevices: async () =>
+      (await request<{ data: IdentityDevice[] }>('/v1/auth/devices')).data,
     revokeSession: (sessionId) =>
       request(`/v1/auth/sessions/${encodeURIComponent(sessionId)}`, {
         method: 'DELETE',
