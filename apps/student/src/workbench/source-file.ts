@@ -48,6 +48,7 @@ export type SourceParserFailureCode =
   | 'PARSER_UNAVAILABLE'
   | 'ENCRYPTED_PDF'
   | 'CORRUPT_PDF'
+  | 'OCR_REQUIRED'
   | 'PARSER_FAILED';
 
 export class SourceParserPortError extends Error {
