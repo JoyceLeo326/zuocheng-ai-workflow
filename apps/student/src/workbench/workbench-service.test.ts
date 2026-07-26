@@ -116,6 +116,7 @@ describe('WorkbenchService first-stage orchestration', () => {
       expect.stringMatching(UUID_V7),
     ]);
     await expect(store.getProject(created.id)).resolves.toEqual(created);
+    await expect(service.listProjects()).resolves.toEqual([created]);
   });
 
   it('parses word targets and rejects ambiguous targets or rubric totals before persistence', async () => {

@@ -7,6 +7,8 @@ import {
   WorkbenchShell,
   studentSurfaceForPath,
 } from './workbench/workbench-shell.js';
+import { createWorkbenchService } from './workbench/workbench-service.js';
+import { createIndexedDbProjectStore } from './workbench/project-store.js';
 import './styles.css';
 
 const root = document.querySelector('#root');
@@ -20,6 +22,9 @@ const identityClient = createIdentityClient({
     configuredApiOrigin === undefined || configuredApiOrigin.trim().length === 0
       ? window.location.origin
       : configuredApiOrigin,
+});
+const workbenchService = createWorkbenchService({
+  store: createIndexedDbProjectStore(),
 });
 
 function StudentApplication() {
@@ -50,6 +55,7 @@ function StudentApplication() {
       onRegister={() => {
         setAccountMode('register');
       }}
+      service={workbenchService}
     />
   );
 }

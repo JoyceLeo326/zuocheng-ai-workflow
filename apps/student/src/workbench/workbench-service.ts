@@ -1,4 +1,3 @@
-import { PdfJsParser } from './pdfjs-parser.js';
 import {
   PROJECT_SCHEMA_VERSION,
   parseProject,
@@ -70,6 +69,7 @@ export type SourceIngestionResult =
     }>;
 
 export interface WorkbenchService {
+  listProjects(): Promise<Project[]>;
   createProject(input: WorkbenchProjectFormInput): Promise<Project>;
   ingestSourceFile(
     projectId: string,
@@ -113,12 +113,19 @@ export function createWorkbenchService(
     (() => createUuidV7(cryptoProvider, now().valueOf()));
   return new DefaultWorkbenchService(
     options.store,
-    options.pdfParser ?? new PdfJsParser(),
+    options.pdfParser ?? lazyPdfJsParser,
     now,
     idFactory,
     cryptoProvider,
   );
 }
+
+const lazyPdfJsParser: PdfParserPort = {
+  async parsePdf(input) {
+    const { PdfJsParser } = await import('./pdfjs-parser.js');
+    return new PdfJsParser().parsePdf(input);
+  },
+};
 
 class DefaultWorkbenchService implements WorkbenchService {
   constructor(
@@ -128,6 +135,10 @@ class DefaultWorkbenchService implements WorkbenchService {
     private readonly idFactory: () => string,
     private readonly cryptoProvider: Crypto | undefined,
   ) {}
+
+  async listProjects(): Promise<Project[]> {
+    return this.store.listProjects();
+  }
 
   async createProject(input: WorkbenchProjectFormInput): Promise<Project> {
     const timestamp = this.timestamp();
