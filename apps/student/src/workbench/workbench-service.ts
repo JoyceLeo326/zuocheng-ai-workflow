@@ -3,6 +3,7 @@ import {
   parseProject,
   type OutputFormat,
   type Project,
+  type EvidenceKind,
   type RubricCriterion,
   type SourceChunk,
   type SourceFile as ProjectSourceFile,
@@ -55,6 +56,16 @@ export interface WorkbenchProjectFormInput {
   forbiddenContent: string;
 }
 
+export interface WorkbenchEvidenceInput {
+  sourceChunkId: string;
+  quote: string;
+  kind: EvidenceKind;
+  stance: 'supports' | 'opposes' | 'neutral';
+  note: string;
+  citation: string;
+  userConfirmed: boolean;
+}
+
 export type SourceIngestionFailureCode =
   | SourceParserFailureCode
   | BrowserSourceParserErrorCode
@@ -82,6 +93,10 @@ export type SourceIngestionResult =
 export interface WorkbenchService {
   listProjects(): Promise<Project[]>;
   createProject(input: WorkbenchProjectFormInput): Promise<Project>;
+  createEvidence(
+    projectId: string,
+    input: WorkbenchEvidenceInput,
+  ): Promise<Project>;
   ingestSourceFile(
     projectId: string,
     file: File,
@@ -97,7 +112,12 @@ export type WorkbenchServiceInputErrorCode =
   | 'INVALID_DEADLINE'
   | 'INVALID_CLOCK'
   | 'INVALID_PARSER_OUTPUT'
-  | 'WEB_CRYPTO_UNAVAILABLE';
+  | 'WEB_CRYPTO_UNAVAILABLE'
+  | 'SOURCE_CHUNK_NOT_FOUND'
+  | 'SOURCE_QUOTE_MISMATCH'
+  | 'AMBIGUOUS_SOURCE_QUOTE'
+  | 'DUPLICATE_EVIDENCE'
+  | 'EVIDENCE_CONFIRMATION_REQUIRED';
 
 export class WorkbenchServiceInputError extends Error {
   constructor(readonly code: WorkbenchServiceInputErrorCode) {
@@ -187,6 +207,87 @@ class DefaultWorkbenchService implements WorkbenchService {
       verificationResults: [],
     });
     return this.store.createProject(project);
+  }
+
+  async createEvidence(
+    projectId: string,
+    input: WorkbenchEvidenceInput,
+  ): Promise<Project> {
+    const current = await this.store.getProject(projectId);
+    if (current === null) {
+      throw new ProjectNotFoundError(projectId);
+    }
+    const chunk = current.sourceChunks.find(
+      (candidate) => candidate.id === input.sourceChunkId,
+    );
+    if (chunk === undefined) {
+      throw new WorkbenchServiceInputError('SOURCE_CHUNK_NOT_FOUND');
+    }
+    if (input.quote.trim().length === 0) {
+      throw new WorkbenchServiceInputError('SOURCE_QUOTE_MISMATCH');
+    }
+    const relativeStart = chunk.text.indexOf(input.quote);
+    if (relativeStart < 0) {
+      throw new WorkbenchServiceInputError('SOURCE_QUOTE_MISMATCH');
+    }
+    if (chunk.text.lastIndexOf(input.quote) !== relativeStart) {
+      throw new WorkbenchServiceInputError('AMBIGUOUS_SOURCE_QUOTE');
+    }
+    const characterStart = chunk.characterStart + relativeStart;
+    const characterEnd = characterStart + input.quote.length;
+    if (
+      current.evidenceCards.some(
+        (evidence) =>
+          evidence.sourceChunkId === chunk.id &&
+          evidence.characterStart === characterStart &&
+          evidence.characterEnd === characterEnd,
+      )
+    ) {
+      throw new WorkbenchServiceInputError('DUPLICATE_EVIDENCE');
+    }
+    if (
+      input.userConfirmed &&
+      (input.kind === 'unverified' ||
+        input.citation.trim().length === 0)
+    ) {
+      throw new WorkbenchServiceInputError(
+        'EVIDENCE_CONFIRMATION_REQUIRED',
+      );
+    }
+
+    const updatedAt = this.timestampAfter(current.updatedAt);
+    const next = parseProject({
+      ...current,
+      version: current.version + 1,
+      updatedAt,
+      evidenceCards: [
+        ...current.evidenceCards,
+        {
+          id: this.idFactory(),
+          version: 1,
+          createdAt: updatedAt,
+          updatedAt,
+          projectId,
+          sourceFileId: chunk.sourceFileId,
+          sourceChunkId: chunk.id,
+          sourceFileVersion: chunk.sourceFileVersion,
+          pageNumber: chunk.pageNumber,
+          characterStart,
+          characterEnd,
+          quote: input.quote,
+          kind: input.kind,
+          note: input.note.trim(),
+          citation: input.citation.trim(),
+          status: input.userConfirmed ? 'verified' : 'selected',
+          stance: input.stance,
+          confirmationStatus: input.userConfirmed
+            ? 'confirmed'
+            : 'pending',
+          userConfirmedAt: input.userConfirmed ? updatedAt : null,
+        },
+      ],
+    });
+    return this.store.saveProject(next, current.version);
   }
 
   async ingestSourceFile(

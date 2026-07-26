@@ -405,4 +405,90 @@ describe('WorkbenchService first-stage orchestration', () => {
       },
     });
   });
+
+  it('persists only exact, source-backed evidence and records user confirmation', async () => {
+    const store = new MemoryProjectStore();
+    const parser: PdfParserPort = {
+      async parsePdf() {
+        return {
+          pageCount: 1,
+          pages: [
+            {
+              pageNumber: 1,
+              text: '课程数据显示，参与度提升了 18%，但样本规模有限。',
+            },
+          ],
+        };
+      },
+    };
+    const service = createWorkbenchService({
+      store,
+      pdfParser: parser,
+      idFactory: sequentialIds(),
+      now: () => new Date('2026-07-27T01:00:00.000Z'),
+    });
+    const initial = await service.createProject(
+      form({
+        rubric: [
+          {
+            title: '证据',
+            description: '引用真实材料',
+            weightPercent: '100',
+          },
+        ],
+      }),
+    );
+    const ingested = await service.ingestSourceFile(
+      initial.id,
+      pdfFile(),
+    );
+    if (ingested.status !== 'ready') {
+      throw new Error('expected ready source');
+    }
+    const chunk = ingested.chunks[0]!;
+
+    const withEvidence = await service.createEvidence(initial.id, {
+      sourceChunkId: chunk.id,
+      quote: '参与度提升了 18%',
+      kind: 'statistic',
+      stance: 'supports',
+      note: '支持核心结论',
+      citation: '课程材料，第 1 页',
+      userConfirmed: true,
+    });
+
+    expect(withEvidence.evidenceCards).toEqual([
+      expect.objectContaining({
+        sourceChunkId: chunk.id,
+        sourceFileId: chunk.sourceFileId,
+        pageNumber: 1,
+        characterStart: 7,
+        characterEnd: 17,
+        quote: '参与度提升了 18%',
+        kind: 'statistic',
+        stance: 'support',
+        confirmationStatus: 'confirmed',
+        userConfirmedAt: expect.any(String),
+        status: 'verified',
+      }),
+    ]);
+    await expect(store.getProject(initial.id)).resolves.toEqual(
+      withEvidence,
+    );
+
+    await expect(
+      service.createEvidence(initial.id, {
+        sourceChunkId: chunk.id,
+        quote: '不存在的引文',
+        kind: 'fact',
+        stance: 'neutral',
+        note: '',
+        citation: '课程材料，第 1 页',
+        userConfirmed: false,
+      }),
+    ).rejects.toMatchObject({
+      name: 'WorkbenchServiceInputError',
+      code: 'SOURCE_QUOTE_MISMATCH',
+    });
+  });
 });
