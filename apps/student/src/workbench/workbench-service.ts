@@ -365,10 +365,6 @@ class DefaultWorkbenchService implements WorkbenchService {
     input: WorkbenchCreateOutlineInput,
   ): Promise<Project> {
     const current = await this.requireProject(projectId);
-    if (input.nodes.length === 0) {
-      throw new OutlineOperationError('INVALID_OUTLINE_STATE', 'nodes');
-    }
-
     const updatedAt = this.timestampAfter(current.updatedAt);
     let outline: EvidenceBoundOutline = {
       id: this.idFactory(),
@@ -801,10 +797,10 @@ class DefaultWorkbenchService implements WorkbenchService {
     project: Project,
   ): void {
     if (outline.nodes.length === 0) {
-      throw new OutlineOperationError(
-        'INVALID_OUTLINE_STATE',
-        'nodes',
-      );
+      if (outline.status === 'draft') {
+        return;
+      }
+      throw new OutlineOperationError('INVALID_OUTLINE_STATE', 'nodes');
     }
     const evidenceById = new Map(
       project.evidenceCards.map((evidence) => [evidence.id, evidence]),

@@ -381,6 +381,22 @@ describe('workbench project domain model', () => {
         lockedAt: null,
       }),
     ).toThrow(/lockedAt/u);
+    expect(
+      parseOutline({
+        ...outline(),
+        status: 'draft',
+        lockedAt: null,
+        nodes: [],
+      }).nodes,
+    ).toEqual([]);
+    expect(() =>
+      parseOutline({
+        ...outline(),
+        status: 'selected',
+        lockedAt: null,
+        nodes: [],
+      }),
+    ).toThrow(/nodes/u);
 
     const duplicatePosition = outline();
     duplicatePosition.nodes.push({

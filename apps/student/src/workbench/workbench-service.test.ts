@@ -741,7 +741,7 @@ describe('WorkbenchService first-stage orchestration', () => {
     }
   });
 
-  it('never invents nodes and rejects unconfirmed evidence before outline persistence', async () => {
+  it('allows an honest empty draft but never invents nodes or accepts unconfirmed evidence', async () => {
     const { store, service, projectId } =
       await serviceWithVerifiedEvidence();
     const current = await store.getProject(projectId);
@@ -762,11 +762,20 @@ describe('WorkbenchService first-stage orchestration', () => {
       (evidence) => evidence.status === 'selected',
     )!.id;
 
+    const emptyDraft = await service.createOutline(projectId, {
+      title: 'No generated placeholder',
+      nodes: [],
+    });
+    expect(emptyDraft.outlines.at(-1)).toMatchObject({
+      title: 'No generated placeholder',
+      status: 'draft',
+      nodes: [],
+    });
     await expect(
-      service.createOutline(projectId, {
-        title: 'No generated placeholder',
-        nodes: [],
-      }),
+      service.selectOutline(
+        projectId,
+        emptyDraft.outlines.at(-1)!.id,
+      ),
     ).rejects.toMatchObject({
       name: 'OutlineOperationError',
       code: 'INVALID_OUTLINE_STATE',
@@ -788,10 +797,9 @@ describe('WorkbenchService first-stage orchestration', () => {
       name: 'OutlineOperationError',
       code: 'UNCONFIRMED_EVIDENCE',
     });
-    await expect(store.getProject(projectId)).resolves.toEqual(
-      withPendingEvidence,
-    );
-    expect(withPendingEvidence.outlines).toEqual([]);
+    await expect(store.getProject(projectId)).resolves.toEqual(emptyDraft);
+    expect(emptyDraft.outlines).toHaveLength(1);
+    expect(emptyDraft.outlines[0]!.nodes).toEqual([]);
   });
 
   it('ingests a real DOCX archive through the workbench pipeline', async () => {
