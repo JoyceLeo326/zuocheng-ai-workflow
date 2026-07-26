@@ -127,7 +127,10 @@ function project(): Project {
         outlineVersion: 1,
         kind: 'presentation',
         status: 'ready',
-        payload: { pages: [{ title: 'One' }, { title: 'Two' }] },
+        payload: {
+          format: 'zuocheng-draft-artifact',
+          pages: [{ title: 'One' }, { title: 'Two' }],
+        },
         blobId: null,
         contentSha256: null,
         staleBecause: [],
