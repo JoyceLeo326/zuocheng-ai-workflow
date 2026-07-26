@@ -129,11 +129,17 @@ export interface IdentityClient {
     token: string;
     newPassword: string;
   }): Promise<{ status: 'password_updated' }>;
+  verifyRecentPassword(input: {
+    password: string;
+  }): Promise<{ recentAuthToken: string; expiresAt: string }>;
   requestAccountExport(): Promise<AccountExport>;
   getAccountExport(exportId: string): Promise<AccountExport>;
   requestAccountDeletion(input: {
     recentAuthToken: string;
-  }): Promise<AccountDeletion>;
+  }): Promise<{
+    deletion: AccountDeletion;
+    confirmationDelivery: { channel: 'email'; status: 'sent' };
+  }>;
   getAccountDeletion(): Promise<AccountDeletion>;
   cancelAccountDeletion(): Promise<AccountDeletion>;
   confirmAccountDeletion(input: {
@@ -321,6 +327,12 @@ export function createIdentityClient(
       }),
     completePasswordRecovery: (input) =>
       request('/v1/auth/password-recovery/complete', {
+        method: 'POST',
+        body: input,
+        mutation: true,
+      }),
+    verifyRecentPassword: (input) =>
+      request('/v1/auth/recent-auth/password', {
         method: 'POST',
         body: input,
         mutation: true,
