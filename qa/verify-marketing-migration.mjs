@@ -9,7 +9,6 @@ const outputRoot = join(sourceRoot, 'dist');
 
 const preservedHashes = {
   'styles.css': '4E2AD7E54165899F67FC22BDF6FAC90D175A40FD9C903FB1388DF6B1542937C7',
-  'script.js': 'C33B6A626E93ADA4A16893DB30D0E7EABAE27FB35DDC5A1817D667F579118F3B',
   'planner.js': '55BF95685C418B34B4FA22FC8D1F8DF69753990FA9B44013ED339007C279095C',
   'cost-policy.js': '2BB073EE93BE1EDB9BEE2103D9D243054A22C177C482FA99736B44A25B2C3CD4',
 };
@@ -34,7 +33,6 @@ test('课程手册改为同源真实下载且构建产物保留文件', async ()
 test('公开构建采用 allowlist，不泄露 ADR、审计、计划或需求台账', async () => {
   const expectedRootFiles = [
     'assets',
-    'cost-policy.js',
     'docs',
     'index.html',
     'planner.js',
@@ -47,8 +45,11 @@ test('公开构建采用 allowlist，不泄露 ADR、审计、计划或需求台
     'launch-playbook.md',
     'measurement.md',
     'product-architecture.md',
-    'zero-owner-cost.md',
   ]);
+  await assert.rejects(access(join(outputRoot, 'cost-policy.js')));
+  await assert.rejects(
+    access(join(outputRoot, 'docs', 'zero-owner-cost.md')),
+  );
   await assert.rejects(access(join(outputRoot, 'docs', 'adr')));
   await assert.rejects(access(join(outputRoot, 'docs', 'audit')));
   await assert.rejects(access(join(outputRoot, 'docs', 'plans')));
