@@ -1,7 +1,13 @@
 /* global self, caches, fetch, URL, Response */
 
-const SHELL_CACHE = 'zuocheng-shell-v2';
+const CACHE_PREFIX = 'zuocheng-shell-';
+const SHELL_CACHE = `${CACHE_PREFIX}v3`;
 const SHELL_FALLBACK = new URL('./', self.registration.scope).pathname;
+const SCOPE_PATH = new URL(self.registration.scope).pathname;
+const STATIC_PATH_PREFIXES = [
+  `${SCOPE_PATH}assets/`,
+  `${SCOPE_PATH}ocr/`,
+];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -19,7 +25,10 @@ self.addEventListener('activate', (event) => {
       .then((keys) =>
         Promise.all(
           keys
-            .filter((key) => key !== SHELL_CACHE)
+            .filter(
+              (key) =>
+                key.startsWith(CACHE_PREFIX) && key !== SHELL_CACHE,
+            )
             .map((key) => caches.delete(key)),
         ),
       )
@@ -30,32 +39,27 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const request = event.request;
   const url = new URL(request.url);
-  if (
-    request.method !== 'GET' ||
-    url.origin !== self.location.origin ||
-    url.pathname.startsWith('/api/')
-  ) {
+  if (!isSafeGet(request, url)) {
     return;
   }
 
   if (request.mode === 'navigate') {
     event.respondWith(
       fetch(request)
-        .then((response) => {
-          if (response.ok) {
-            void caches
-              .open(SHELL_CACHE)
-              .then((cache) => cache.put(SHELL_FALLBACK, response.clone()));
-          }
-          return response;
-        })
+        .then((response) => response)
         .catch(async () => {
-          const cached =
-            (await caches.match(request)) ??
-            (await caches.match(SHELL_FALLBACK));
+          const cached = await caches.match(SHELL_FALLBACK);
           return cached ?? Response.error();
         }),
     );
+    return;
+  }
+
+  if (
+    !STATIC_PATH_PREFIXES.some((prefix) =>
+      url.pathname.startsWith(prefix),
+    )
+  ) {
     return;
   }
 
@@ -65,7 +69,7 @@ self.addEventListener('fetch', (event) => {
         return cached;
       }
       const response = await fetch(request);
-      if (response.ok) {
+      if (isCacheableStaticResponse(response)) {
         const cache = await caches.open(SHELL_CACHE);
         await cache.put(request, response.clone());
       }
@@ -73,3 +77,28 @@ self.addEventListener('fetch', (event) => {
     }),
   );
 });
+
+function isSafeGet(request, url) {
+  if (
+    request.method !== 'GET' ||
+    url.origin !== self.location.origin ||
+    request.cache === 'no-store' ||
+    request.headers.has('Authorization')
+  ) {
+    return false;
+  }
+  return !['/api/', '/v1/', '/admin/'].some((prefix) =>
+    url.pathname.startsWith(prefix),
+  );
+}
+
+function isCacheableStaticResponse(response) {
+  if (!response.ok) {
+    return false;
+  }
+  const cacheControl = response.headers.get('Cache-Control') ?? '';
+  if (/(?:^|,)\s*(?:no-store|private)(?:\s|,|$)/iu.test(cacheControl)) {
+    return false;
+  }
+  return response.headers.get('Vary') !== '*';
+}
