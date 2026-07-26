@@ -8,6 +8,7 @@
   },
   "scripts": {
     "build": "pnpm -r build",
+    "build:vercel": "pnpm --filter @zuocheng/marketing build && pnpm --filter @zuocheng/student exec vite build --base=/app/ && node scripts/assemble-vercel.mjs",
     "dev": "pnpm --parallel --filter './apps/*' --filter './services/*' dev",
     "lint": "eslint . --max-warnings=0",
     "pretest": "pnpm --filter @zuocheng/contracts build && pnpm --filter @zuocheng/config build && pnpm --filter @zuocheng/db build && pnpm --filter @zuocheng/marketing build",

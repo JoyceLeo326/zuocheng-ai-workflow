@@ -1,7 +1,7 @@
 /* global self, caches, fetch, URL, Response */
 
 const SHELL_CACHE = 'zuocheng-shell-v2';
-const SHELL_FALLBACK = '/';
+const SHELL_FALLBACK = new URL('./', self.registration.scope).pathname;
 
 self.addEventListener('install', (event) => {
   event.waitUntil(

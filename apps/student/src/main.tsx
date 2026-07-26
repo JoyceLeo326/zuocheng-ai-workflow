@@ -71,5 +71,8 @@ createRoot(root).render(
 );
 
 if (import.meta.env.PROD) {
-  void registerOfflineSupport();
+  void registerOfflineSupport(
+    undefined,
+    import.meta.env.BASE_URL,
+  );
 }
