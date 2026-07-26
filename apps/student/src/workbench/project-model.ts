@@ -921,7 +921,7 @@ export function parseOutline(input: unknown): Outline {
   const nodes = arrayAt(object.nodes, `${path}.nodes`).map((item, index) =>
     parseOutlineNode(item, `${path}.nodes[${index}]`),
   );
-  if (nodes.length === 0) {
+  if (nodes.length === 0 && status !== 'draft') {
     fail(`${path}.nodes`, 'must contain at least one node');
   }
   assertUniqueIdentities(nodes, `${path}.nodes`);
