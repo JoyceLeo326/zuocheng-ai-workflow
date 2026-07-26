@@ -5,6 +5,12 @@ import {
 import type { RuntimeCostPolicy } from '@zuocheng/contracts';
 import { z } from 'zod';
 
+export {
+  IdentityProviderConfigurationError,
+  parseIdentityProviderConfiguration,
+  type IdentityProviderConfiguration,
+} from './identity-provider.js';
+
 const EnvironmentSchema = z.object({
   DEPLOYMENT_MODE: DeploymentModeSchema.default('local'),
   PORT: z.coerce.number().int().min(1).max(65_535).default(3000),
@@ -35,6 +41,21 @@ const ForbiddenOwnerProviderKeys = [
   'PLATFORM_AI_API_KEY',
 ] as const;
 
+const ForbiddenProjectIdentityCredentialKeys = [
+  'BETTER_AUTH_SECRET',
+  'BETTER_AUTH_SECRETS',
+  'AUTH_SECRET',
+  'GOOGLE_CLIENT_ID',
+  'GOOGLE_CLIENT_SECRET',
+  'GITHUB_CLIENT_ID',
+  'GITHUB_CLIENT_SECRET',
+  'MICROSOFT_CLIENT_ID',
+  'MICROSOFT_CLIENT_SECRET',
+  'MICROSOFT_TENANT_ID',
+  'SMTP_URL',
+  'SMTP_PASSWORD',
+] as const;
+
 export function parseRuntimeEnvironment(
   environment: Record<string, string | undefined>,
 ): RuntimeEnvironment {
@@ -48,6 +69,14 @@ export function parseRuntimeEnvironment(
   for (const name of ForbiddenOwnerProviderKeys) {
     if (environment[name] !== undefined && environment[name] !== '') {
       throw new Error(`${name} is forbidden in a zero-owner-cost runtime`);
+    }
+  }
+
+  for (const name of ForbiddenProjectIdentityCredentialKeys) {
+    if (environment[name] !== undefined && environment[name] !== '') {
+      throw new Error(
+        `${name} must be supplied through the customer runtime adapter`,
+      );
     }
   }
 

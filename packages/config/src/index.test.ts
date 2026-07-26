@@ -37,6 +37,28 @@ describe('runtime environment', () => {
     ).toThrow(/forbidden/u);
   });
 
+  it.each([
+    'BETTER_AUTH_SECRET',
+    'BETTER_AUTH_SECRETS',
+    'AUTH_SECRET',
+    'GOOGLE_CLIENT_ID',
+    'GOOGLE_CLIENT_SECRET',
+    'GITHUB_CLIENT_ID',
+    'GITHUB_CLIENT_SECRET',
+    'MICROSOFT_CLIENT_ID',
+    'MICROSOFT_CLIENT_SECRET',
+    'MICROSOFT_TENANT_ID',
+    'SMTP_URL',
+    'SMTP_PASSWORD',
+  ])(
+    'refuses project-owned identity credential %s before startup',
+    (name) => {
+      expect(() =>
+        parseRuntimeEnvironment({ [name]: 'project-owned-secret' }),
+      ).toThrow(/customer runtime adapter/u);
+    },
+  );
+
   it('preserves an explicit customer runtime adapter module for API composition', () => {
     expect(
       parseRuntimeEnvironment({
