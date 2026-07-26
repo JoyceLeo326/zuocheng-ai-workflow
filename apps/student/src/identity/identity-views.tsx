@@ -395,14 +395,13 @@ const modeTitles: Record<AuthenticationMode, string> = {
 };
 
 const modeDescriptions: Record<AuthenticationMode, string> = {
-  login: '回到你的项目、课程与交付记录。我们会先验证凭据，再建立安全会话。',
+  login: '登录后继续管理项目、课程与交付记录。',
   register: '创建账号并验证邮箱，让项目、课程与交付记录保持连续。',
   recover: '输入注册邮箱。为保护账号，无论它是否存在，页面都会显示相同结果。',
   reset: '设置一个全新的独立密码。成功后，系统会撤销所有旧会话。',
 };
 
-function BrandStory({ mode }: { mode: AuthenticationMode }) {
-  const currentStep = mode === 'register' ? 1 : mode === 'reset' ? 2 : 0;
+function BrandStory() {
   return (
     <aside className="auth-brand" aria-label="做成学生工作台">
       <div>
@@ -411,26 +410,23 @@ function BrandStory({ mode }: { mode: AuthenticationMode }) {
           <b>做成</b>
           <small>STUDENT OS</small>
         </a>
-        <p className="auth-brand__kicker">从一张空白画布，到一次真正交付</p>
+        <p className="auth-brand__kicker">项目、课程与交付记录</p>
         <h2>
-          项目不会停在
-          <em>“差不多”</em>
+          回到上次的
+          <em>工作进度</em>
         </h2>
         <p className="auth-brand__copy">
-          把灵感、学习、版本与反馈留在一条连续的成长轨迹里。身份是这段旅程的起点。
+          在一个账号中查看学习进度、作品项目与交付记录。
         </p>
       </div>
 
-      <ol className="journey-steps" aria-label="登录进度">
+      <ol className="journey-steps" aria-label="账号功能">
         {[
-          ['01', '确认身份', '选择密码、Passkey 或已验证账号'],
-          ['02', '建立安全会话', '仅使用受保护的 HttpOnly Cookie'],
-          ['03', '回到工作台', '继续课程、项目与交付'],
-        ].map(([index, title, copy], step) => (
-          <li
-            className={step === currentStep ? 'is-current' : undefined}
-            key={index}
-          >
+          ['01', '项目进度', '返回最近项目与草稿'],
+          ['02', '课程记录', '继续已开始的课程与作业'],
+          ['03', '账号安全', '管理登录方式与活动设备'],
+        ].map(([index, title, copy]) => (
+          <li key={index}>
             <span>{index}</span>
             <div>
               <strong>{title}</strong>
@@ -443,8 +439,8 @@ function BrandStory({ mode }: { mode: AuthenticationMode }) {
       <div className="trust-strip">
         <span className="trust-strip__pulse" aria-hidden="true" />
         <div>
-          <strong>安全会话</strong>
-          <small>凭据不写入浏览器存储</small>
+          <strong>账号安全</strong>
+          <small>支持 Passkey 与设备管理</small>
         </div>
       </div>
     </aside>
@@ -504,7 +500,7 @@ export function AuthenticationPanel({
 
   return (
     <section className="auth-layout" aria-labelledby="auth-title">
-      <BrandStory mode={mode} />
+      <BrandStory />
       <div className="auth-card">
         {onBack === undefined ? null : (
           <button
@@ -518,7 +514,7 @@ export function AuthenticationPanel({
           </button>
         )}
         <header className="auth-card__intro">
-          <p className="eyebrow">账号入口 / Identity gateway</p>
+          <p className="eyebrow">账号</p>
           <h1 id="auth-title" ref={titleRef} tabIndex={-1}>
             {modeTitles[mode]}
           </h1>
@@ -590,7 +586,7 @@ export function AuthenticationPanel({
                   required
                 />
                 <button className="button button--primary" disabled={disabled}>
-                  <span>{busy ? '正在验证安全会话…' : '安全登录'}</span>
+                  <span>{busy ? '正在登录…' : '登录'}</span>
                   <span aria-hidden="true">↗</span>
                 </button>
               </form>
@@ -615,7 +611,7 @@ export function AuthenticationPanel({
                 <small>更快 · 抗钓鱼</small>
               </button>
               <div className="divider" role="separator">
-                <span>或使用已验证账号</span>
+                <span>或使用其他账号</span>
               </div>
               <ProviderButtons busy={disabled} onOAuth={onOAuth} />
             </>
@@ -740,9 +736,9 @@ export function AuthenticationPanel({
         </div>
 
         <footer className="auth-card__footer">
-          <span>加密传输</span>
-          <span>受保护会话</span>
-          <span>无浏览器令牌</span>
+          <span>Passkey</span>
+          <span>设备管理</span>
+          <span>数据导出</span>
         </footer>
       </div>
     </section>
@@ -765,8 +761,8 @@ export function IdentityLoadingState() {
         <div className="trust-strip">
           <span className="trust-strip__pulse" aria-hidden="true" />
           <div>
-            <strong>正在验证安全会话</strong>
-            <small>读取受保护的会话 Cookie</small>
+            <strong>正在恢复账号状态</strong>
+            <small>请稍候</small>
           </div>
         </div>
       </aside>
@@ -779,7 +775,7 @@ export function IdentityLoadingState() {
         <div className="skeleton skeleton--field" />
         <div className="skeleton skeleton--button" />
         <p className="sr-only" role="status">
-          正在验证安全会话…
+          正在恢复账号状态…
         </p>
       </section>
     </div>

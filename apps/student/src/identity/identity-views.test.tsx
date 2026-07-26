@@ -65,11 +65,11 @@ describe('student identity views', () => {
   it('renders a rich brand narrative and keyboard-operable secure login', () => {
     const html = renderToStaticMarkup(<AuthenticationPanel {...authProps} />);
 
-    expect(html).toContain('从一张空白画布');
-    expect(html).toContain('项目不会停在');
-    expect(html).toContain('“差不多”');
-    expect(html).toContain('安全会话');
-    expect(html).toContain('aria-label="登录进度"');
+    expect(html).toContain('项目、课程与交付记录');
+    expect(html).toContain('回到上次的');
+    expect(html).toContain('工作进度');
+    expect(html).toContain('账号安全');
+    expect(html).toContain('aria-label="账号功能"');
     expect(html).toContain('data-mode="login"');
     expect(html).toContain('登录做成');
     expect(html).toContain('autoComplete="username webauthn"');
@@ -145,7 +145,7 @@ describe('student identity views', () => {
   it('renders a branded skeleton while the real cookie session is checked', () => {
     const html = renderToStaticMarkup(<IdentityLoadingState />);
 
-    expect(html).toContain('正在验证安全会话');
+    expect(html).toContain('正在恢复账号状态');
     expect(html).toContain('skeleton');
     expect(html).toContain('aria-busy="true"');
     expect(html).toContain('从想法到可交付');
