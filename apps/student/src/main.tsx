@@ -9,6 +9,7 @@ import {
 } from './workbench/workbench-shell.js';
 import { createWorkbenchService } from './workbench/workbench-service.js';
 import { createIndexedDbProjectStore } from './workbench/project-store.js';
+import { registerOfflineSupport } from './offline.js';
 import './styles.css';
 
 const root = document.querySelector('#root');
@@ -68,3 +69,5 @@ createRoot(root).render(
     <StudentApplication />
   </StrictMode>,
 );
+
+void registerOfflineSupport();
