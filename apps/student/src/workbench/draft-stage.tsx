@@ -8,13 +8,10 @@ import {
 import type {
   EntityId,
   EvidenceCard,
-  Outline,
   Project,
 } from './project-model.js';
 import {
   verifyDraft,
-  type DraftClaim,
-  type DraftNumericFact,
   type DraftPage,
   type DraftPagePatch,
   type DraftVerificationCheck,
@@ -333,22 +330,6 @@ export function DraftStage({
     }
     dispatchAction({ type: 'succeed' });
     afterSuccess?.();
-  };
-
-  const updatePageDraft = (
-    pageId: string,
-    updater: (current: PageDraft) => PageDraft,
-  ) => {
-    setPageDrafts((current) => {
-      const draft = current[pageId];
-      if (draft === undefined) {
-        return current;
-      }
-      return {
-        ...current,
-        [pageId]: updater(draft),
-      };
-    });
   };
 
   const handleInsertPage = (event: FormEvent<HTMLFormElement>) => {
