@@ -1,4 +1,4 @@
-import { StrictMode, useEffect, useState } from 'react';
+import { StrictMode, useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { createBYOKCredentialStore } from './ai/byok-credential-store.js';
 import {
@@ -7,14 +7,40 @@ import {
   createOpenAICompatibleConfigStore,
   testOpenAICompatibleConnection,
 } from './ai/openai-compatible-connection.js';
+import { createOpenAICompatibleProvider } from './ai/openai-compatible-provider.js';
+import { WorkflowAssistant } from './ai/workflow-assistant.js';
+import { createIndexedDbWorkflowAssistantStore } from './ai/workflow-assistant-store.js';
+import {
+  OcrAcquisitionService,
+  PdfJsRasterizer,
+  UrlAcquisitionService,
+  createBrowserTesseractOcrWorker,
+} from './acquisition/index.js';
+import {
+  createIndexedDbProductEventLedger,
+  createProductEventRecorder,
+  decorateCourseStoreWithAnalytics,
+  decorateWorkbenchServiceWithAnalytics,
+  resolveAnonymousBrowserId,
+} from './analytics/index.js';
 import { createIndexedDbCourseStore } from './course/index.js';
 import { createIdentityClient } from './identity/identity-client.js';
 import { IdentityPortal } from './identity/identity-portal.js';
 import type { AuthenticationMode } from './identity/identity-views.js';
 import {
+  GitHubGistSyncAdapter,
+  SyncController,
+  createGitHubSyncCredentialStore,
+  createIndexedDbSyncStore,
+} from './sync/index.js';
+import {
   WorkbenchShell,
   studentSurfaceForPath,
 } from './workbench/workbench-shell.js';
+import {
+  deserializeProjectPackage,
+  serializeProjectPackage,
+} from './workbench/project-manager-controller.js';
 import { createWorkbenchService } from './workbench/workbench-service.js';
 import { createIndexedDbProjectStore } from './workbench/project-store.js';
 import { registerOfflineSupport } from './offline.js';
@@ -32,13 +58,80 @@ const identityClient = createIdentityClient({
       ? window.location.origin
       : configuredApiOrigin,
 });
-const workbenchService = createWorkbenchService({
-  store: createIndexedDbProjectStore(),
+const projectStore = createIndexedDbProjectStore();
+const baseWorkbenchService = createWorkbenchService({
+  store: projectStore,
 });
+const activityLedger = createIndexedDbProductEventLedger();
+const productEventRecorder = createProductEventRecorder({
+  ledger: activityLedger,
+  context: {
+    anonymousId: resolveAnonymousBrowserId(),
+    sourceVersion: '0.1.0',
+  },
+});
+const workbenchService = decorateWorkbenchServiceWithAnalytics(
+  baseWorkbenchService,
+  productEventRecorder,
+  {
+    onAnalyticsError: () => undefined,
+  },
+);
 const byokCredentialStore = createBYOKCredentialStore();
 const openAICompatibleConfigStore =
   createOpenAICompatibleConfigStore();
-const courseStore = createIndexedDbCourseStore();
+const workflowAssistantStore =
+  createIndexedDbWorkflowAssistantStore();
+const courseStore = decorateCourseStoreWithAnalytics(
+  createIndexedDbCourseStore(),
+  productEventRecorder,
+  {
+    onAnalyticsError: () => undefined,
+  },
+);
+const acquisitionServices = Object.freeze({
+  ocrService: new OcrAcquisitionService({
+    createWorker: createBrowserTesseractOcrWorker,
+    pdfRasterizer: new PdfJsRasterizer(),
+  }),
+  urlService: new UrlAcquisitionService(),
+});
+const syncController = new SyncController({
+  adapter: new GitHubGistSyncAdapter(),
+  store: createIndexedDbSyncStore(),
+  credentials: createGitHubSyncCredentialStore(),
+  getLocalProject: async (projectId) => {
+    const project = await projectStore.getProject(projectId);
+    if (project === null) {
+      return null;
+    }
+    const bundle = await baseWorkbenchService.exportProjectBundle(
+      projectId,
+    );
+    return {
+      projectId: project.id,
+      projectTitle: project.title,
+      projectVersion: project.version,
+      projectUpdatedAt: project.updatedAt,
+      package: await serializeProjectPackage(bundle),
+    };
+  },
+  applyRemoteProject: async ({ projectId, package: file, mode }) => {
+    const bundle = await deserializeProjectPackage(file);
+    if (bundle.project.id !== projectId) {
+      throw new Error('同步项目标识与项目包不一致。');
+    }
+    if (mode === 'create') {
+      await projectStore.importProject(bundle);
+      return;
+    }
+    const current = await projectStore.getProject(projectId);
+    if (current === null) {
+      throw new Error('此设备上的项目已不存在，请刷新后重试。');
+    }
+    await projectStore.replaceProject(bundle, current.version);
+  },
+});
 
 function persistentBrowserId(storageKey: string): string {
   try {
@@ -72,7 +165,19 @@ const requestedAccountMode =
 const requestedWorkbenchView =
   initialSearchParams.get('view') === 'courses'
     ? 'courses'
-    : 'workbench';
+    : initialSearchParams.get('view') === 'templates'
+      ? 'templates'
+      : initialSearchParams.get('view') === 'sync'
+      ? 'sync'
+      : initialSearchParams.get('view') === 'assistant'
+        ? 'assistant'
+        : initialSearchParams.get('view') === 'acquisition'
+          ? 'acquisition'
+          : initialSearchParams.get('view') === 'activity'
+            ? 'activity'
+        : initialSearchParams.get('view') === 'projects'
+          ? 'projects'
+          : 'workbench';
 
 function useOnlineStatus(): boolean {
   const [online, setOnline] = useState(window.navigator.onLine);
@@ -96,6 +201,21 @@ function StudentApplication() {
   );
   const [openAICompatibleConfig, setOpenAICompatibleConfig] =
     useState(() => openAICompatibleConfigStore.load());
+  const workflowAssistant = useMemo(() => {
+    if (openAICompatibleConfig === null) {
+      return undefined;
+    }
+    return new WorkflowAssistant({
+      provider: createOpenAICompatibleProvider({
+        id: OPENAI_COMPATIBLE_PROVIDER_ID,
+        displayName: OPENAI_COMPATIBLE_DISPLAY_NAME,
+        endpoint: openAICompatibleConfig.endpoint,
+        model: openAICompatibleConfig.model,
+        credentials: byokCredentialStore,
+      }),
+      store: workflowAssistantStore,
+    });
+  }, [openAICompatibleConfig]);
 
   if (surface === 'identity') {
     return <IdentityPortal client={identityClient} />;
@@ -113,6 +233,8 @@ function StudentApplication() {
   }
   return (
     <WorkbenchShell
+      acquisition={acquisitionServices}
+      activityLedger={activityLedger}
       aiSettings={{
         providerId: OPENAI_COMPATIBLE_PROVIDER_ID,
         displayName: OPENAI_COMPATIBLE_DISPLAY_NAME,
@@ -143,6 +265,11 @@ function StudentApplication() {
         setAccountMode('register');
       }}
       service={workbenchService}
+      syncCenter={{
+        controller: syncController,
+        online,
+      }}
+      workflowAssistant={workflowAssistant}
     />
   );
 }

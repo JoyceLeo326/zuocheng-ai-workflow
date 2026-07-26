@@ -323,6 +323,38 @@ describe('WorkbenchService first-stage orchestration', () => {
     await expect(service.listProjects()).resolves.toEqual([created]);
   });
 
+  it('updates the current task definition without creating a duplicate project', async () => {
+    const { store, service, projectId } = await serviceWithVerifiedDraft();
+    const before = await store.getProject(projectId);
+    if (before === null || service.updateProjectDefinition === undefined) {
+      throw new Error('expected editable project');
+    }
+
+    const updated = await service.updateProjectDefinition(
+      projectId,
+      form({
+        projectTitle: '修改后的课程路演',
+        taskName: '修改后的三页课程汇报',
+        audience: '答辩评委',
+      }),
+    );
+
+    expect(updated.id).toBe(projectId);
+    expect(updated.version).toBe(before.version + 1);
+    expect(updated.taskDefinition).toMatchObject({
+      id: before.taskDefinition.id,
+      version: before.taskDefinition.version + 1,
+      taskName: '修改后的三页课程汇报',
+      audience: '答辩评委',
+    });
+    expect(updated.taskDefinition.rubric.map((criterion) => criterion.id)).toEqual(
+      before.taskDefinition.rubric.map((criterion) => criterion.id),
+    );
+    expect(updated.artifacts).toEqual(before.artifacts);
+    expect(updated.verificationResults).toEqual([]);
+    await expect(service.listProjects()).resolves.toHaveLength(1);
+  });
+
   it('persists lifecycle transitions and permanently deletes only from trash', async () => {
     const store = new MemoryProjectStore();
     const service = createWorkbenchService({
@@ -596,6 +628,123 @@ describe('WorkbenchService first-stage orchestration', () => {
     });
     expect(parserCalls).toBe(1);
     expect(duplicate.project.sourceFiles).toHaveLength(1);
+  });
+
+  it('persists reviewed OCR pages against the original uploaded file', async () => {
+    const store = new MemoryProjectStore();
+    const service = createWorkbenchService({
+      store,
+      idFactory: sequentialIds(),
+      now: () => new Date('2026-07-27T01:00:00.000Z'),
+    });
+    const initial = await service.createProject(form());
+    const originalFile = new File(
+      [new Uint8Array([0x89, 0x50, 0x4e, 0x47])],
+      'whiteboard.png',
+      { type: 'image/png' },
+    );
+    const result = await service.ingestAcquiredMaterial!(
+      initial.id,
+      {
+        kind: 'ocr',
+        originalFile,
+        fileName: originalFile.name,
+        mediaType: 'image/png',
+        acquiredAt: '2026-07-27T01:01:00.000Z',
+        pageCount: 2,
+        pages: [
+          { pageNumber: 1, text: '第一页原文', confidence: 93 },
+          { pageNumber: 2, text: '第二页原文', confidence: 88 },
+        ],
+        originalText: '第一页原文\n\n第二页原文',
+        safeText: '第一页原文\n\n第二页原文',
+        flags: [],
+        contentSha256: await sha256('第一页原文\n\n第二页原文'),
+      },
+      originalFile,
+    );
+
+    expect(result.status).toBe('ready');
+    if (result.status !== 'ready') {
+      throw new Error('expected OCR source to be ready');
+    }
+    expect(result.sourceFile).toMatchObject({
+      fileName: 'whiteboard.png',
+      mediaType: 'image/png',
+      pageCount: 2,
+      status: 'ready',
+    });
+    expect(result.chunks).toEqual([
+      expect.objectContaining({
+        ordinal: 0,
+        pageNumber: 1,
+        pageLabel: '1',
+        text: '第一页原文',
+      }),
+      expect.objectContaining({
+        ordinal: 1,
+        pageNumber: 2,
+        pageLabel: '2',
+        text: '第二页原文',
+      }),
+    ]);
+    expect(
+      new Uint8Array(
+        await (
+          await store.getSourceBlob(initial.id, result.sourceFile.id)
+        )!.arrayBuffer(),
+      ),
+    ).toEqual(new Uint8Array([0x89, 0x50, 0x4e, 0x47]));
+  });
+
+  it('persists reviewed webpage provenance with its unmodified source text', async () => {
+    const store = new MemoryProjectStore();
+    const service = createWorkbenchService({
+      store,
+      idFactory: sequentialIds(),
+      now: () => new Date('2026-07-27T01:00:00.000Z'),
+    });
+    const initial = await service.createProject(form());
+    const result = await service.ingestAcquiredMaterial!(
+      initial.id,
+      {
+        kind: 'url',
+        method: 'manual',
+        sourceUrl: 'https://example.com/research',
+        fetchedAt: '2026-07-27T01:02:00.000Z',
+        title: '课程研究：证据与结论',
+        originalText: '原始网页正文，不做替换。',
+        safeText: '原始网页正文，不做替换。',
+        flags: [],
+        contentSha256: await sha256('原始网页正文，不做替换。'),
+      },
+      null,
+    );
+
+    expect(result.status).toBe('ready');
+    if (result.status !== 'ready') {
+      throw new Error('expected URL source to be ready');
+    }
+    expect(result.sourceFile).toMatchObject({
+      fileName: '课程研究 证据与结论.md',
+      mediaType: 'text/markdown',
+      pageCount: 1,
+      status: 'ready',
+    });
+    expect(result.chunks[0]?.text).toContain(
+      '来源：https://example.com/research',
+    );
+    expect(result.chunks[0]?.text).toContain(
+      '抓取时间：2026-07-27T01:02:00.000Z',
+    );
+    expect(result.chunks[0]?.text).toContain(
+      '原始网页正文，不做替换。',
+    );
+    expect(
+      await (
+        await store.getSourceBlob(initial.id, result.sourceFile.id)
+      )?.text(),
+    ).toBe(result.chunks[0]?.text);
   });
 
   it('persists an exact failed parse state and never claims ready or creates chunks', async () => {

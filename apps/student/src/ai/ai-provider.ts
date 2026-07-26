@@ -207,6 +207,11 @@ export type EnqueueAIRunInput = Readonly<{
   estimated?: AIRunEstimate | null;
 }>;
 
+export type AIRunPersistenceSnapshot = Readonly<{
+  run: AIRun;
+  definition: EnqueueAIRunInput;
+}>;
+
 export type AIRunOrchestratorOptions = Readonly<{
   createId?: () => string;
   now?: () => string;
@@ -349,6 +354,70 @@ export class AIRunOrchestrator {
 
   listRuns(): readonly AIRun[] {
     return Object.freeze([...this.#runs.values()]);
+  }
+
+  snapshot(runId: string): AIRunPersistenceSnapshot {
+    const run = this.getRun(runId);
+    const definition = this.#definition(runId);
+    return Object.freeze({
+      run,
+      definition: publicRunDefinition(definition),
+    });
+  }
+
+  restore(snapshot: AIRunPersistenceSnapshot): AIRun {
+    assertNoCredentialFields(snapshot);
+    const run = snapshot.run;
+    if (
+      typeof run !== 'object' ||
+      run === null ||
+      run.status === 'running' ||
+      this.#runs.has(run.id)
+    ) {
+      throw new AIDomainError('INVALID_RUN_INPUT');
+    }
+    const definition = normalizeRunDefinition(
+      snapshot.definition,
+      run.parentRunId,
+      run.attempt,
+    );
+    assertRunMatchesDefinition(run, definition);
+    const candidate =
+      run.candidate === null
+        ? null
+        : candidateAt(
+            run.candidate,
+            definition.availableEvidenceCardIds,
+            definition.lockedPaths,
+          );
+    if (
+      (run.status === 'waiting_for_review' ||
+        run.status === 'completed') &&
+      candidate === null
+    ) {
+      throw new AIDomainError('INVALID_RUN_INPUT');
+    }
+    const restored = freezeRun({
+      ...run,
+      candidate,
+      claims: candidate?.claims ?? Object.freeze([]),
+      patches: candidate?.patches ?? Object.freeze([]),
+    });
+    const existing = this.#idempotency.get(definition.idempotencyKey);
+    if (
+      existing !== undefined &&
+      (existing.runId !== restored.id ||
+        existing.fingerprint !== definition.fingerprint)
+    ) {
+      throw new AIDomainError('IDEMPOTENCY_CONFLICT');
+    }
+    this.#runs.set(restored.id, restored);
+    this.#definitions.set(restored.id, definition);
+    this.#idempotency.set(definition.idempotencyKey, {
+      runId: restored.id,
+      fingerprint: definition.fingerprint,
+    });
+    return restored;
   }
 
   execute(
@@ -925,6 +994,55 @@ function createProviderRequest(
     availableEvidenceCardIds: definition.availableEvidenceCardIds,
     schemaVersion: definition.schemaVersion,
   });
+}
+
+function publicRunDefinition(
+  definition: NormalizedRunDefinition,
+): EnqueueAIRunInput {
+  return Object.freeze({
+    idempotencyKey: definition.idempotencyKey,
+    provider: definition.provider,
+    promptVersion: definition.promptVersion,
+    prompt: definition.prompt,
+    input: definition.input,
+    inputVersions: definition.inputVersions,
+    retrievedChunkIds: definition.retrievedChunkIds,
+    availableEvidenceCardIds: definition.availableEvidenceCardIds,
+    lockedPaths: definition.lockedPaths,
+    schemaVersion: definition.schemaVersion,
+    estimated: definition.estimated,
+  });
+}
+
+function assertRunMatchesDefinition(
+  run: AIRun,
+  definition: NormalizedRunDefinition,
+): void {
+  const validStatus = Object.prototype.hasOwnProperty.call(
+    RUN_TRANSITIONS,
+    run.status,
+  );
+  if (
+    !validStatus ||
+    typeof run.id !== 'string' ||
+    run.id.trim().length === 0 ||
+    run.id !== run.id.trim() ||
+    run.idempotencyKey !== definition.idempotencyKey ||
+    run.provider.id !== definition.provider.id ||
+    run.provider.kind !== definition.provider.kind ||
+    run.provider.endpoint !== definition.provider.endpoint ||
+    run.model !== definition.provider.model ||
+    run.promptVersion !== definition.promptVersion ||
+    run.schemaVersion !== definition.schemaVersion ||
+    stableSerialize(versionsToJson(run.inputVersions)) !==
+      stableSerialize(versionsToJson(definition.inputVersions)) ||
+    stableSerialize(run.retrievedChunkIds) !==
+      stableSerialize(definition.retrievedChunkIds) ||
+    !Number.isSafeInteger(run.attempt) ||
+    run.attempt < 1
+  ) {
+    throw new AIDomainError('INVALID_RUN_INPUT');
+  }
 }
 
 function hasSufficientInput(

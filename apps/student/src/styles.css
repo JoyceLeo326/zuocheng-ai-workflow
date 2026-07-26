@@ -1662,6 +1662,54 @@ mark.status-pill {
   justify-content: flex-end;
 }
 
+.workbench-more {
+  position: relative;
+  display: none;
+}
+
+.workbench-more summary {
+  min-height: 2.65rem;
+  padding: 0.68rem 0.75rem;
+  border: 1px solid var(--line-bright);
+  color: var(--paper);
+  font-size: 0.72rem;
+  font-weight: 800;
+  list-style: none;
+  cursor: pointer;
+}
+
+.workbench-more summary::-webkit-details-marker {
+  display: none;
+}
+
+.workbench-more > div {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 0.45rem);
+  right: 0;
+  display: grid;
+  width: 10.5rem;
+  padding: 0.45rem;
+  border: 1px solid var(--line-bright);
+  background: #11120f;
+  box-shadow: 0 1rem 2.5rem rgb(0 0 0 / 35%);
+}
+
+.workbench-more button {
+  min-height: 2.7rem;
+  padding: 0.6rem 0.7rem;
+  border: 0;
+  color: var(--paper);
+  text-align: left;
+  background: transparent;
+}
+
+.workbench-more button:hover,
+.workbench-more button:focus-visible {
+  color: var(--ink);
+  background: var(--acid);
+}
+
 .workbench-ai-settings {
   display: grid;
   width: min(100%, 96rem);
@@ -1708,6 +1756,18 @@ mark.status-pill {
   display: flex;
   justify-content: flex-end;
   padding-top: clamp(1rem, 3vw, 2rem);
+}
+
+.workbench-utility-view {
+  width: min(100%, 96rem);
+  padding: clamp(1rem, 3vw, 2.5rem) 0;
+  margin: 0 auto;
+}
+
+.workbench-utility-view__toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 1rem;
 }
 
 .workbench-project-header {
@@ -1915,6 +1975,13 @@ mark.status-pill {
   max-width: 39rem;
   margin: 0;
   font-size: 0.72rem;
+}
+
+.workbench-section-header__actions {
+  align-items: flex-end;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
 }
 
 .task-definition-form {
@@ -2595,6 +2662,14 @@ mark.status-pill {
     padding-inline: 0.7rem;
   }
 
+  .workbench-account .workbench-secondary {
+    display: none;
+  }
+
+  .workbench-more {
+    display: block;
+  }
+
   .workbench-ai-settings {
     padding-block: 1rem 2rem;
   }
@@ -2614,6 +2689,12 @@ mark.status-pill {
   .workbench-section-header,
   .material-panel > header {
     display: grid;
+  }
+
+  .workbench-section-header__actions {
+    align-items: flex-start;
+    flex-direction: row;
+    flex-wrap: wrap;
   }
 
   .task-definition-form {

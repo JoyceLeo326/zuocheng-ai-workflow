@@ -1,0 +1,309 @@
+.acquisition-panel {
+  --acq-ink: #151515;
+  --acq-paper: #f7f0df;
+  --acq-panel: #fffaf0;
+  --acq-accent: #b8ff38;
+  --acq-line: rgba(21, 21, 21, 0.2);
+  color: var(--acq-ink);
+  display: grid;
+  gap: 1.25rem;
+  max-width: 90rem;
+  margin-inline: auto;
+  padding: clamp(1rem, 2vw, 2rem);
+}
+
+.acquisition-panel *,
+.acquisition-panel *::before,
+.acquisition-panel *::after {
+  box-sizing: border-box;
+}
+
+.acquisition-panel h2,
+.acquisition-panel h3,
+.acquisition-panel h4,
+.acquisition-panel p {
+  margin: 0;
+}
+
+.acquisition-panel h2 {
+  font-size: clamp(2rem, 5vw, 4.5rem);
+  letter-spacing: -0.055em;
+  line-height: 0.95;
+}
+
+.acquisition-panel__header,
+.acquisition-panel__modes,
+.acquisition-panel__progress > div,
+.acquisition-panel__result > header {
+  align-items: center;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+}
+
+.acquisition-panel__eyebrow {
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.13em;
+  margin-bottom: 0.5rem !important;
+  text-transform: uppercase;
+}
+
+.acquisition-panel__modes {
+  background: var(--acq-ink);
+  color: #fff;
+  padding: 0.4rem;
+}
+
+.acquisition-panel__modes span {
+  padding: 0.55rem 0.75rem;
+}
+
+.acquisition-panel__modes span[data-active="true"] {
+  background: var(--acq-accent);
+  color: var(--acq-ink);
+}
+
+.acquisition-panel__grid {
+  display: grid;
+  gap: 1.25rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.acquisition-panel__card,
+.acquisition-panel__progress,
+.acquisition-panel__error,
+.acquisition-panel__result {
+  background: var(--acq-panel);
+  border: 1px solid var(--acq-line);
+  box-shadow: 0.35rem 0.35rem 0 var(--acq-ink);
+  padding: clamp(1rem, 2vw, 1.5rem);
+}
+
+.acquisition-panel__card {
+  align-content: start;
+  display: grid;
+  gap: 1rem;
+}
+
+.acquisition-panel label,
+.acquisition-panel__subform {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.acquisition-panel label {
+  font-weight: 800;
+}
+
+.acquisition-panel input,
+.acquisition-panel textarea,
+.acquisition-panel button {
+  border: 1px solid var(--acq-ink);
+  border-radius: 0.35rem;
+  color: inherit;
+  font: inherit;
+}
+
+.acquisition-panel input,
+.acquisition-panel textarea {
+  background: #fff;
+  min-height: 2.75rem;
+  padding: 0.7rem 0.75rem;
+  resize: vertical;
+  width: 100%;
+}
+
+.acquisition-panel button {
+  background: transparent;
+  cursor: pointer;
+  font-weight: 900;
+  min-height: 2.75rem;
+  padding: 0.65rem 0.9rem;
+}
+
+.acquisition-panel button:hover:not(:disabled) {
+  background: var(--acq-ink);
+  color: #fff;
+}
+
+.acquisition-panel button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.acquisition-panel .acquisition-panel__primary {
+  background: var(--acq-accent);
+}
+
+.acquisition-panel button:focus-visible,
+.acquisition-panel input:focus-visible,
+.acquisition-panel textarea:focus-visible,
+.acquisition-panel summary:focus-visible {
+  outline: 0.22rem solid #006eff;
+  outline-offset: 0.18rem;
+}
+
+.acquisition-panel details {
+  border-top: 1px solid var(--acq-line);
+  padding-top: 0.75rem;
+}
+
+.acquisition-panel summary {
+  cursor: pointer;
+  font-weight: 900;
+  padding-block: 0.4rem;
+}
+
+.acquisition-panel__subform {
+  background: #f2ead7;
+  margin-top: 0.65rem;
+  padding: 0.85rem;
+}
+
+.acquisition-panel__progress {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.acquisition-panel progress {
+  accent-color: var(--acq-accent);
+  height: 0.8rem;
+  width: 100%;
+}
+
+.acquisition-panel__error {
+  align-items: center;
+  background: #fff0eb;
+  border-color: #9f2e23;
+  display: flex;
+  justify-content: space-between;
+}
+
+.acquisition-panel__result {
+  display: grid;
+  gap: 1rem;
+}
+
+.acquisition-panel__result code {
+  background: var(--acq-ink);
+  color: #fff;
+  padding: 0.45rem 0.6rem;
+}
+
+.acquisition-panel__warning {
+  background: #fff0bc;
+  border-left: 0.3rem solid #9b6500;
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.85rem;
+}
+
+.acquisition-panel__facts {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0;
+}
+
+.acquisition-panel__facts div {
+  border-left: 0.25rem solid var(--acq-accent);
+  min-width: 0;
+  padding-left: 0.7rem;
+}
+
+.acquisition-panel__facts dt {
+  font-size: 0.75rem;
+}
+
+.acquisition-panel__facts dd {
+  font-weight: 900;
+  margin: 0.25rem 0 0;
+  overflow-wrap: anywhere;
+}
+
+.acquisition-panel__facts a {
+  color: inherit;
+}
+
+.acquisition-panel__text {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.acquisition-panel__approval {
+  align-items: center;
+  border-top: 1px solid var(--acq-line);
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  padding-top: 1rem;
+}
+
+.acquisition-panel__approval > div {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.acquisition-panel__approval button {
+  flex: 0 0 auto;
+}
+
+.acquisition-panel pre {
+  background: #f0eadc;
+  border: 1px solid var(--acq-line);
+  font: 0.88rem/1.65 ui-monospace, SFMono-Regular, Consolas, monospace;
+  margin: 0.6rem 0 0;
+  max-height: 24rem;
+  overflow: auto;
+  padding: 1rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+@media (max-width: 48rem) {
+  .acquisition-panel__header,
+  .acquisition-panel__error,
+  .acquisition-panel__approval {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .acquisition-panel__modes {
+    align-self: start;
+    flex-wrap: wrap;
+  }
+
+  .acquisition-panel__grid,
+  .acquisition-panel__text,
+  .acquisition-panel__facts {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .acquisition-panel *,
+  .acquisition-panel *::before,
+  .acquisition-panel *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@media (forced-colors: active) {
+  .acquisition-panel,
+  .acquisition-panel__card,
+  .acquisition-panel__progress,
+  .acquisition-panel__error,
+  .acquisition-panel__result {
+    background: Canvas;
+    color: CanvasText;
+  }
+
+  .acquisition-panel button,
+  .acquisition-panel input,
+  .acquisition-panel textarea {
+    border-color: ButtonText;
+  }
+}

@@ -4,6 +4,7 @@ import {
   useState,
   type FormEvent,
 } from 'react';
+import { generateCourseCertificate } from './course-certificate.js';
 import {
   LOCAL_7_DAY_COURSE,
   bindCourseProject,
@@ -38,6 +39,7 @@ export interface CourseCenterViewCallbacks {
     previousSubmissionId: string,
     content: string,
   ): Promise<void>;
+  onExportCertificate(learnerName: string): Promise<void>;
   onOpenProjects(): Promise<void>;
   onRefresh(): Promise<void>;
 }
@@ -257,6 +259,16 @@ export function CourseCenter({
       onCreateEnrollment={() =>
         run(() => controller.create(learnerId))
       }
+      onExportCertificate={async (learnerName) => {
+        if (enrollment === null) {
+          throw new Error('课程记录尚未载入。');
+        }
+        const result = await generateCourseCertificate({
+          learnerName,
+          enrollment,
+        });
+        downloadCertificate(result.blob, result.fileName);
+      }}
       onOpenProjects={onOpenProjects}
       onRefresh={refresh}
       onResubmitAssignment={(submissionId, content) =>
@@ -296,6 +308,7 @@ export function CourseCenterView({
   onUpdateLesson,
   onSubmitAssignment,
   onResubmitAssignment,
+  onExportCertificate,
   onOpenProjects,
   onRefresh,
 }: CourseCenterViewProps) {
@@ -308,6 +321,8 @@ export function CourseCenterView({
   );
   const [assignmentContent, setAssignmentContent] =
     useState('');
+  const [certificateName, setCertificateName] = useState('');
+  const [certificateStatus, setCertificateStatus] = useState('');
   const [actionError, setActionError] = useState<string | null>(
     null,
   );
@@ -406,6 +421,20 @@ export function CourseCenterView({
         await onSubmitAssignment(activeLesson.id, content);
       }
       setAssignmentContent('');
+    });
+  };
+
+  const exportCertificateForm = (event: FormEvent) => {
+    event.preventDefault();
+    const learnerName = certificateName.trim();
+    if (learnerName.length === 0) {
+      setActionError('请填写证书姓名。');
+      return;
+    }
+    setCertificateStatus('');
+    void perform(async () => {
+      await onExportCertificate(learnerName);
+      setCertificateStatus('证书已生成并开始下载。');
     });
   };
 
@@ -858,7 +887,33 @@ export function CourseCenterView({
               </strong>
             </header>
             {outcome.certificateEligible ? (
-              <p>课程、作业与项目条件均已满足，可进入证书申请流程。</p>
+              <form
+                className="course-center__certificate"
+                onSubmit={exportCertificateForm}
+              >
+                <label>
+                  <span>证书姓名</span>
+                  <input
+                    autoComplete="name"
+                    disabled={busy}
+                    maxLength={80}
+                    onChange={(event) => {
+                      setCertificateName(event.currentTarget.value);
+                    }}
+                    placeholder="填写用于证书的姓名"
+                    required
+                    value={certificateName}
+                  />
+                </label>
+                <button disabled={busy} type="submit">
+                  生成 PDF 证书
+                </button>
+                {certificateStatus.length > 0 ? (
+                  <p aria-live="polite" role="status">
+                    {certificateStatus}
+                  </p>
+                ) : null}
+              </form>
             ) : (
               <ul className="course-center__blockers">
                 {outcome.blockers.map((blocker) => (
@@ -1000,4 +1055,18 @@ function courseCenterErrorMessage(reason: unknown): string {
     reason.message.trim().length > 0
     ? reason.message
     : '操作未完成，请重试。';
+}
+
+function downloadCertificate(blob: Blob, fileName: string): void {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = fileName;
+  anchor.rel = 'noopener';
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => {
+    URL.revokeObjectURL(url);
+  }, 0);
 }

@@ -39,6 +39,10 @@ import {
   type OutlineNodePatch,
   type OutlineValidationContext,
 } from './outline-operations.js';
+import type {
+  AcquisitionResult,
+  UrlAcquisitionResult,
+} from '../acquisition/acquisition-domain.js';
 import {
   beginSourceParsing,
   computeSourceFileSha256,
@@ -225,6 +229,10 @@ export type SourceIngestionResult =
 export interface WorkbenchService {
   listProjects(): Promise<Project[]>;
   createProject(input: WorkbenchProjectFormInput): Promise<Project>;
+  updateProjectDefinition?(
+    projectId: string,
+    input: WorkbenchProjectFormInput,
+  ): Promise<Project>;
   deleteProject(projectId: string): Promise<void>;
   createEvidence(
     projectId: string,
@@ -297,6 +305,11 @@ export interface WorkbenchService {
   ingestSourceFile(
     projectId: string,
     file: File,
+  ): Promise<SourceIngestionResult>;
+  ingestAcquiredMaterial?(
+    projectId: string,
+    result: AcquisitionResult,
+    originalFile: File | null,
   ): Promise<SourceIngestionResult>;
   retrySourceFile(
     projectId: string,
@@ -463,6 +476,50 @@ class DefaultWorkbenchService
       verificationResults: [],
     });
     return this.store.createProject(project);
+  }
+
+  async updateProjectDefinition(
+    projectId: string,
+    input: WorkbenchProjectFormInput,
+  ): Promise<Project> {
+    const current = await this.requireProject(projectId);
+    const updatedAt = this.timestampAfter(current.updatedAt);
+    const parsedRubric = parseRubric(input.rubric, updatedAt, this.idFactory);
+    const rubric = parsedRubric.map((criterion, index) => {
+      const existing = current.taskDefinition.rubric[index];
+      if (existing === undefined) {
+        return criterion;
+      }
+      return {
+        ...criterion,
+        id: existing.id,
+        version: existing.version + 1,
+        createdAt: existing.createdAt,
+      };
+    });
+    const next = parseProject({
+      ...current,
+      title: normalizedProjectTitle(input),
+      version: current.version + 1,
+      updatedAt,
+      taskDefinition: {
+        ...current.taskDefinition,
+        version: current.taskDefinition.version + 1,
+        updatedAt,
+        taskName: input.taskName,
+        audience: input.audience,
+        dueAt: parseDeadline(input.deadline),
+        lengthTarget: parseLengthTarget(input.scope),
+        presentationDurationMinutes: parseDuration(input.durationMinutes),
+        outputFormats: parseOutputFormats(input.outputFormat),
+        rubric,
+        tone: input.tone,
+        mustInclude: parseLines(input.requiredContent),
+        mustAvoid: parseLines(input.forbiddenContent),
+      },
+      verificationResults: [],
+    });
+    return this.store.saveProject(next, current.version);
   }
 
   async deleteProject(projectId: string): Promise<void> {
@@ -1152,6 +1209,50 @@ class DefaultWorkbenchService
     );
   }
 
+  async ingestAcquiredMaterial(
+    projectId: string,
+    result: AcquisitionResult,
+    originalFile: File | null,
+  ): Promise<SourceIngestionResult> {
+    const current = await this.requireProject(projectId);
+    const file =
+      result.kind === 'ocr'
+        ? (originalFile ?? result.originalFile)
+        : createUrlMaterialFile(result);
+    if (
+      result.kind === 'ocr' &&
+      (file.name !== result.fileName ||
+        file.type.split(';', 1)[0]?.toLowerCase() !==
+          result.mediaType)
+    ) {
+      throw new WorkbenchServiceInputError(
+        'INVALID_PARSER_OUTPUT',
+      );
+    }
+    const upload = validateSourceUpload(file);
+    const sha256 = await computeSourceFileSha256(
+      file,
+      this.cryptoProvider,
+    );
+    const existing = current.sourceFiles.find(
+      (source) => source.contentSha256 === sha256,
+    );
+    if (existing !== undefined) {
+      return {
+        status: 'duplicate',
+        project: current,
+        existingSourceFileId: existing.id,
+      };
+    }
+    return this.persistAcquiredIngestion(
+      current,
+      file,
+      upload,
+      sha256,
+      result,
+    );
+  }
+
   async retrySourceFile(
     projectId: string,
     sourceFileId: string,
@@ -1462,6 +1563,112 @@ class DefaultWorkbenchService
       artifacts,
       verificationResults,
     });
+  }
+
+  private async persistAcquiredIngestion(
+    current: Project,
+    file: File,
+    upload: ValidatedSourceUpload,
+    sha256: string,
+    result: AcquisitionResult,
+  ): Promise<SourceIngestionResult> {
+    const sourceId = this.idFactory();
+    const pendingAt = this.timestampAfter(current.updatedAt);
+    const pendingSource = createProjectSourceFile({
+      id: sourceId,
+      projectId: current.id,
+      upload,
+      sha256,
+      timestamp: pendingAt,
+    });
+    const pendingProject = await this.saveSourceState(
+      current,
+      pendingSource,
+      pendingAt,
+    );
+    await this.store.putSourceBlob(current.id, sourceId, file);
+
+    const parsingAt = this.timestampAfter(
+      pendingProject.updatedAt,
+    );
+    const parsingSource: ProjectSourceFile = {
+      ...pendingSource,
+      version: pendingSource.version + 1,
+      updatedAt: parsingAt,
+      status: 'parsing',
+      parseProgress: 0,
+    };
+    const parsingProject = await this.saveSourceState(
+      pendingProject,
+      parsingSource,
+      parsingAt,
+    );
+    const chunksAt = this.timestampAfter(
+      parsingProject.updatedAt,
+    );
+    const pages =
+      result.kind === 'ocr'
+        ? result.pages
+            .filter((page) => page.text.length > 0)
+            .map((page, ordinal) => ({
+              ordinal,
+              pageNumber: page.pageNumber,
+              text: page.text,
+            }))
+        : [
+            {
+              ordinal: 0,
+              pageNumber: 1,
+              text: createUrlMaterialText(result),
+            },
+          ];
+    if (pages.length === 0) {
+      return this.persistParseFailure(
+        parsingProject,
+        parsingSource,
+        'INVALID_PARSER_OUTPUT',
+      );
+    }
+    const chunks = await this.createProjectChunks(
+      parsingProject.id,
+      parsingSource,
+      pages,
+      chunksAt,
+    );
+    const withChunks = await this.store.replaceSourceChunks(
+      current.id,
+      sourceId,
+      chunks,
+      parsingProject.version,
+      chunksAt,
+    );
+    const readyAt = this.timestampAfter(withChunks.updatedAt);
+    const readySource: ProjectSourceFile = {
+      ...parsingSource,
+      version: parsingSource.version + 1,
+      updatedAt: readyAt,
+      status: 'ready',
+      parseProgress: 100,
+      pageCount:
+        result.kind === 'ocr' ? result.pageCount : 1,
+      error: null,
+    };
+    const readyProject = await this.saveSourceState(
+      withChunks,
+      readySource,
+      readyAt,
+    );
+    return {
+      status: 'ready',
+      project: readyProject,
+      sourceFile: findProjectSource(readyProject, sourceId),
+      chunks: readyProject.sourceChunks.filter(
+        (chunk) =>
+          chunk.sourceFileId === sourceId &&
+          chunk.sourceFileVersion ===
+            readySource.sourceVersion,
+      ),
+    };
   }
 
   private async persistSourceIngestion(
@@ -2663,6 +2870,50 @@ function parseLines(value: string): string[] {
     .split(/\r?\n/u)
     .map((line) => line.trim())
     .filter((line) => line.length > 0);
+}
+
+function createUrlMaterialFile(
+  result: UrlAcquisitionResult,
+): File {
+  const body = createUrlMaterialText(result);
+  return new File(
+    [body],
+    `${safeMaterialFileName(result.title)}.md`,
+    {
+      type: 'text/markdown',
+      lastModified: Date.parse(result.fetchedAt),
+    },
+  );
+}
+
+function createUrlMaterialText(
+  result: UrlAcquisitionResult,
+): string {
+  return [
+    `# ${result.title}`,
+    '',
+    `来源：${result.sourceUrl}`,
+    `抓取时间：${result.fetchedAt}`,
+    `读取方式：${result.method}`,
+    '',
+    '---',
+    '',
+    result.originalText,
+  ].join('\n');
+}
+
+function safeMaterialFileName(value: string): string {
+  const withoutControls = Array.from(value, (character) =>
+    character.charCodeAt(0) <= 0x1f ? ' ' : character,
+  ).join('');
+  const normalized = withoutControls
+    .normalize('NFKC')
+    .replace(/[<>:"/\\|?*]/gu, ' ')
+    .replace(/\s+/gu, ' ')
+    .trim()
+    .replace(/[. ]+$/gu, '')
+    .slice(0, 80);
+  return normalized.length > 0 ? normalized : '网页材料';
 }
 
 function createProjectSourceFile(input: {
