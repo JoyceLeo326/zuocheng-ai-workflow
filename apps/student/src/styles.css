@@ -2062,6 +2062,57 @@ mark.status-pill {
   font-size: 0.58rem;
 }
 
+.material-list__result {
+  min-width: 6.5rem;
+  text-align: right;
+}
+
+.material-list__result small {
+  max-width: 13rem;
+  line-height: 1.35;
+  white-space: normal;
+}
+
+.source-chunk-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+  padding: 0;
+  margin: 0.9rem 0 0;
+  list-style: none;
+}
+
+.source-chunk-list li {
+  min-width: 0;
+  padding: 0.85rem;
+  border: 1px solid var(--line);
+  background: #0d0e0c;
+}
+
+.source-chunk-list li > span,
+.source-chunk-list li > small {
+  color: var(--signal);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 0.55rem;
+  letter-spacing: 0.08em;
+}
+
+.source-chunk-list p {
+  display: -webkit-box;
+  margin: 0.65rem 0;
+  overflow: hidden;
+  color: var(--paper);
+  font-size: 0.68rem;
+  line-height: 1.65;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 5;
+}
+
+.source-chunk-list li > small {
+  color: var(--paper-faint);
+  letter-spacing: 0;
+}
+
 .workbench-canvas__footer {
   display: flex;
   gap: 1rem;
@@ -2140,6 +2191,16 @@ mark.status-pill {
   fill: none;
   stroke: currentColor;
   stroke-width: 2;
+}
+
+.workbench-inspector li.is-complete {
+  color: var(--paper);
+}
+
+.workbench-inspector li.is-complete .check-placeholder {
+  border-color: var(--signal);
+  color: var(--signal);
+  background: rgb(190 255 69 / 8%);
 }
 
 .workbench-inspector__next {
@@ -2513,9 +2574,18 @@ mark.status-pill {
     grid-template-columns: auto minmax(0, 1fr) auto;
   }
 
+  .material-list__result {
+    grid-column: 2 / -1;
+    text-align: left;
+  }
+
   .material-list .text-action {
     grid-column: 2;
     justify-self: start;
+  }
+
+  .source-chunk-list {
+    grid-template-columns: 1fr;
   }
 
   .workbench-canvas__footer {
