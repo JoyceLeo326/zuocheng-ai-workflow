@@ -396,7 +396,7 @@ const modeTitles: Record<AuthenticationMode, string> = {
 
 const modeDescriptions: Record<AuthenticationMode, string> = {
   login: '回到你的项目、课程与交付记录。我们会先验证凭据，再建立安全会话。',
-  register: '创建正式学生身份。完成邮件验证后，你的学习与作品会在同一个账号下持续积累。',
+  register: '创建账号并验证邮箱，让项目、课程与交付记录保持连续。',
   recover: '输入注册邮箱。为保护账号，无论它是否存在，页面都会显示相同结果。',
   reset: '设置一个全新的独立密码。成功后，系统会撤销所有旧会话。',
 };
@@ -514,7 +514,7 @@ export function AuthenticationPanel({
             type="button"
           >
             <span aria-hidden="true">←</span>
-            返回本地工作台
+            返回工作台
           </button>
         )}
         <header className="auth-card__intro">
@@ -667,11 +667,11 @@ export function AuthenticationPanel({
                   type="checkbox"
                 />
                 <span>
-                  我同意服务条款与隐私说明，并理解邮件验证后才能使用正式工作台。
+                  我同意服务条款与隐私说明，并接受必要的邮箱验证。
                 </span>
               </label>
               <button className="button button--primary" disabled={disabled}>
-                <span>{busy ? '正在创建正式账号…' : '创建账号并验证邮箱'}</span>
+                <span>{busy ? '正在创建账号…' : '创建账号并验证邮箱'}</span>
                 <span aria-hidden="true">↗</span>
               </button>
             </form>
@@ -696,7 +696,7 @@ export function AuthenticationPanel({
               <div className="privacy-note">
                 <span aria-hidden="true">◎</span>
                 <p>
-                  为保护账号，无论邮箱是否存在，页面都会显示相同结果。系统只会通过真实邮件服务发送恢复链接。
+                  为保护账号，无论邮箱是否存在，页面都会显示相同结果。恢复链接只通过邮件发送。
                 </p>
               </div>
               <button className="button button--primary" disabled={disabled}>
@@ -820,7 +820,7 @@ function formatTime(value: string) {
 
 function exportStatus(status: AccountExport['status']) {
   return {
-    pending: ['任务已排队', '等待正式服务开始生成归档。'],
+    pending: ['任务已排队', '等待生成归档。'],
     processing: ['正在生成归档', '正在整理账号、项目与审计资料。'],
     ready: ['归档可以下载', '请在到期前下载，并核对 SHA-256。'],
     failed: ['生成未完成', '没有生成不完整的下载包，请重试。'],
@@ -834,7 +834,7 @@ function deletionStatus(status: AccountDeletion['status']) {
     processing: ['已进入不可逆阶段', '会话正在撤销，项目与对象数据进入删除编排。'],
     cancelled: ['删除请求已取消', '账号与项目保持原状。'],
     completed: ['删除流程已完成', '仅保留必要的非敏感删除证明。'],
-    failed: ['删除流程暂停', '系统没有标记假完成，请联系部署方恢复处理。'],
+    failed: ['删除流程暂停', '请联系支持恢复处理。'],
   }[status];
 }
 
@@ -895,7 +895,7 @@ export function SecurityCenter({
         <div className="security-nav__actions">
           <span className="environment-pill">
             <i aria-hidden="true" />
-            正式账号
+            账号安全
           </span>
           <button
             className="button button--quiet button--compact"
@@ -916,13 +916,13 @@ export function SecurityCenter({
             <em>由你掌控。</em>
           </h1>
           <p>
-            在账号与设备中心管理登录方式、活动位置与数据权利。每个按钮都直接连接正式身份服务，不使用演示会话。
+            在账号与设备中心管理登录方式、活动设备、数据导出与账号删除。
           </p>
         </div>
         <div className="security-score" aria-label="安全状态">
           <span className="security-score__ring">
             <b>{activeSessions.length > 0 ? '已连接' : '待确认'}</b>
-            <small>真实会话</small>
+            <small>账号会话</small>
           </span>
           <div>
             <strong>安全状态</strong>
@@ -1027,7 +1027,7 @@ export function SecurityCenter({
               <span aria-hidden="true">◇</span>
               <div>
                 <strong>还没有其他设备</strong>
-                <p>设备记录会在正式会话建立后出现在这里。</p>
+                <p>在其他设备登录后，设备记录会出现在这里。</p>
               </div>
             </div>
           ) : (
@@ -1133,7 +1133,7 @@ export function SecurityCenter({
           </header>
           <h2>导出你的数据</h2>
           <p>
-            生成账号、项目与审计资料的真实归档。密码、会话和 Provider
+            生成账号、项目与审计资料的完整归档。密码、会话和 Provider
             密钥永不进入导出包。
           </p>
           <div className="export-visual" aria-hidden="true">
@@ -1145,7 +1145,7 @@ export function SecurityCenter({
           {accountExport === null ? (
             <div className="job-empty">
               <strong>还没有导出任务</strong>
-              <span>创建后可在这里查看真实进度与校验值。</span>
+              <span>创建后可在这里查看进度与校验值。</span>
             </div>
           ) : (
             <div className="job-status" data-status={accountExport.status} role="status">
@@ -1169,7 +1169,7 @@ export function SecurityCenter({
             onClick={onExport}
             type="button"
           >
-            {busyAction === 'export' ? '正在创建导出任务…' : '请求真实数据导出'}
+            {busyAction === 'export' ? '正在创建导出任务…' : '创建数据导出'}
           </button>
         </article>
 
@@ -1262,7 +1262,7 @@ export function SecurityCenter({
 
       <footer className="security-footer">
         <span>做成■ 身份控制中心</span>
-        <span>所有状态均来自正式身份服务</span>
+        <span>账号、设备与数据管理</span>
       </footer>
     </section>
   );

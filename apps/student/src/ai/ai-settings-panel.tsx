@@ -33,7 +33,7 @@ export type AISettingsFormInput = Readonly<{
 }>;
 
 export type AISettingsFeedback = Readonly<{
-  kind: 'idle' | 'pending' | 'success' | 'error';
+  kind: 'idle' | 'pending' | 'success' | 'error' | 'cancelled';
   message: string;
 }>;
 
@@ -48,6 +48,7 @@ export interface AISettingsActionDependencies {
   onDeleteConfig(): void | Promise<void>;
   onTestConnection(
     input: AISettingsConnectionInput,
+    signal: AbortSignal,
   ): void | Promise<void>;
 }
 
@@ -56,6 +57,7 @@ export interface AISettingsActions {
   remove(): Promise<void>;
   testConnection(
     input: AISettingsFormInput,
+    signal: AbortSignal,
     report: (feedback: AISettingsFeedback) => void,
   ): Promise<void>;
 }
@@ -87,6 +89,11 @@ const TEST_ERROR_FEEDBACK: AISettingsFeedback = Object.freeze({
   message: '连接失败，请检查模型地址、模型名称和密钥。',
 });
 
+const TEST_CANCELLED_FEEDBACK: AISettingsFeedback = Object.freeze({
+  kind: 'cancelled',
+  message: '连接测试已取消。',
+});
+
 export function createAISettingsActions(
   dependencies: AISettingsActionDependencies,
 ): AISettingsActions {
@@ -114,10 +121,15 @@ export function createAISettingsActions(
 
     async testConnection(
       input: AISettingsFormInput,
+      signal: AbortSignal,
       report: (feedback: AISettingsFeedback) => void,
     ): Promise<void> {
       report(TEST_PENDING_FEEDBACK);
       try {
+        if (signal.aborted) {
+          report(TEST_CANCELLED_FEEDBACK);
+          return;
+        }
         const config = providerConfigAt(dependencies, input);
         const apiKey = credentialAt(
           input.apiKey,
@@ -126,10 +138,19 @@ export function createAISettingsActions(
         );
         await dependencies.onTestConnection(
           Object.freeze({ ...config, apiKey }),
+          signal,
         );
-        report(TEST_SUCCESS_FEEDBACK);
+        report(
+          signal.aborted
+            ? TEST_CANCELLED_FEEDBACK
+            : TEST_SUCCESS_FEEDBACK,
+        );
       } catch {
-        report(TEST_ERROR_FEEDBACK);
+        report(
+          signal.aborted
+            ? TEST_CANCELLED_FEEDBACK
+            : TEST_ERROR_FEEDBACK,
+        );
       }
     },
   });
@@ -172,6 +193,7 @@ export function AISettingsPanel({
   const [feedback, setFeedback] =
     useState<AISettingsFeedback>(IDLE_FEEDBACK);
   const errorRef = useRef<HTMLDivElement>(null);
+  const testControllerRef = useRef<AbortController | null>(null);
 
   const actions = createAISettingsActions({
     providerId,
@@ -194,6 +216,13 @@ export function AISettingsPanel({
       errorRef.current?.focus();
     }
   }, [feedback]);
+
+  useEffect(
+    () => () => {
+      testControllerRef.current?.abort();
+    },
+    [],
+  );
 
   async function handleSave(
     event: FormEvent<HTMLFormElement>,
@@ -230,10 +259,19 @@ export function AISettingsPanel({
     if (busy) {
       return;
     }
+    const controller = new AbortController();
+    testControllerRef.current = controller;
     setBusyAction('test');
     try {
-      await actions.testConnection(formInput(), setFeedback);
+      await actions.testConnection(
+        formInput(),
+        controller.signal,
+        setFeedback,
+      );
     } finally {
+      if (testControllerRef.current === controller) {
+        testControllerRef.current = null;
+      }
       setBusyAction(null);
     }
   }
@@ -249,6 +287,8 @@ export function AISettingsPanel({
     });
     try {
       await actions.remove();
+      setEndpoint('');
+      setModel('');
       setApiKey('');
       setKeyVisible(false);
       setHasSavedCredential(false);
@@ -425,16 +465,28 @@ export function AISettingsPanel({
         </p>
 
         <div className="ai-settings-panel__actions">
-          <button
-            className="ai-settings-panel__button ai-settings-panel__button--test"
-            disabled={busy}
-            onClick={() => {
-              void handleTestConnection();
-            }}
-            type="button"
-          >
-            {busyAction === 'test' ? '正在连接…' : '测试连接'}
-          </button>
+          {busyAction === 'test' ? (
+            <button
+              className="ai-settings-panel__button ai-settings-panel__button--cancel"
+              onClick={() => {
+                testControllerRef.current?.abort();
+              }}
+              type="button"
+            >
+              取消测试
+            </button>
+          ) : (
+            <button
+              className="ai-settings-panel__button ai-settings-panel__button--test"
+              disabled={busy}
+              onClick={() => {
+                void handleTestConnection();
+              }}
+              type="button"
+            >
+              测试连接
+            </button>
+          )}
           <button
             className="ai-settings-panel__button ai-settings-panel__button--save"
             disabled={busy}
@@ -472,6 +524,8 @@ export function AISettingsPanel({
                 ? '…'
                 : feedback.kind === 'success'
                   ? '✓'
+                  : feedback.kind === 'cancelled'
+                    ? '×'
                   : '!'}
             </span>
             <p>{feedback.message}</p>

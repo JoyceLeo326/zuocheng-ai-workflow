@@ -1,5 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
+import { createBYOKCredentialStore } from '../ai/byok-credential-store.js';
+import { MemoryCourseStore } from '../course/index.js';
 import { executeOutlineStageAction } from './outline-stage.js';
 import type { Project } from './project-model.js';
 import {
@@ -10,11 +12,14 @@ import {
   findDraftArtifact,
   hasConfirmedVerifiedEvidence,
   missingTaskFields,
+  projectStageFor,
   studentSurfaceForPath,
+  workbenchViewReducer,
   workbenchStageAvailable,
   type WorkbenchDraft,
+  type WorkbenchViewState,
 } from './workbench-shell.js';
-import type { WorkbenchService } from './workbench-service.js';
+import type { WorkbenchProjectLifecycleService } from './workbench-service.js';
 
 const PROJECT_ID = '01900000-0000-7000-8000-000000000601';
 const TASK_ID = '01900000-0000-7000-8000-000000000602';
@@ -88,7 +93,7 @@ function outlineProject(
   };
 }
 
-function outlineService(next: Project): WorkbenchService {
+function outlineService(next: Project): WorkbenchProjectLifecycleService {
   return {
     listProjects: vi.fn().mockResolvedValue([]),
     createProject: vi.fn().mockResolvedValue(next),
@@ -112,6 +117,14 @@ function outlineService(next: Project): WorkbenchService {
     retrySourceFile: vi.fn(),
     replaceSourceFile: vi.fn(),
     deleteSourceFile: vi.fn().mockResolvedValue(next),
+    copyProject: vi.fn().mockResolvedValue(next),
+    archiveProject: vi.fn().mockResolvedValue(next),
+    activateProject: vi.fn().mockResolvedValue(next),
+    trashProject: vi.fn().mockResolvedValue(next),
+    restoreProject: vi.fn().mockResolvedValue(next),
+    permanentlyDeleteProject: vi.fn().mockResolvedValue(undefined),
+    exportProjectBundle: vi.fn(),
+    importProjectBundle: vi.fn().mockResolvedValue(next),
   };
 }
 
@@ -273,6 +286,107 @@ describe('WB-01 student workbench entry', () => {
     expect(html).not.toContain('导出成功');
   });
 
+  it('keeps the recent project open by default and exposes projects only on demand', () => {
+    const current = projectWithDraft();
+    const service = outlineService(current);
+    const workbench = renderToStaticMarkup(
+      <WorkbenchShell
+        initialProject={current}
+        onLogin={vi.fn()}
+        onRegister={vi.fn()}
+        service={service}
+      />,
+    );
+    const manager = renderToStaticMarkup(
+      <WorkbenchShell
+        initialProject={current}
+        initialView="projects"
+        onLogin={vi.fn()}
+        onRegister={vi.fn()}
+        service={service}
+      />,
+    );
+
+    expect(workbench).toContain('>项目<');
+    expect(workbench).toContain('编辑核验');
+    expect(workbench).not.toContain('id="project-manager-title"');
+    expect(manager).toContain('id="project-manager-title"');
+    expect(manager).toContain(current.title);
+  });
+
+  it('opens the course center on demand without replacing the current project', () => {
+    const current = projectWithDraft();
+    const service = outlineService(current);
+    const workbench = renderToStaticMarkup(
+      <WorkbenchShell
+        courseCenter={{
+          enrollmentId: 'course-enrollment-01',
+          learnerId: 'learner-01',
+          store: new MemoryCourseStore(),
+        }}
+        initialProject={current}
+        onLogin={vi.fn()}
+        onRegister={vi.fn()}
+        service={service}
+      />,
+    );
+    const courses = renderToStaticMarkup(
+      <WorkbenchShell
+        courseCenter={{
+          enrollmentId: 'course-enrollment-01',
+          learnerId: 'learner-01',
+          store: new MemoryCourseStore(),
+        }}
+        initialProject={current}
+        initialView="courses"
+        onLogin={vi.fn()}
+        onRegister={vi.fn()}
+        service={service}
+      />,
+    );
+
+    expect(workbench).toContain('>课程</button>');
+    expect(workbench).toContain('编辑核验');
+    expect(workbench).not.toContain('正在读取课程记录');
+    expect(courses).toContain('正在读取课程记录');
+    expect(courses).toContain('7 天');
+    expect(courses).not.toContain('无需登录');
+    expect(courses).not.toContain('零成本');
+  });
+
+  it('restores the furthest editable stage from persisted materials, evidence, outline and draft', () => {
+    expect(projectStageFor(outlineProject())).toBe(2);
+    expect(
+      projectStageFor(
+        outlineProject({
+          evidenceCards: [],
+          sourceFiles: [
+            {
+              id: FILE_ID,
+              version: 1,
+              createdAt: CREATED_AT,
+              updatedAt: CREATED_AT,
+              projectId: PROJECT_ID,
+              fileName: 'course.pdf',
+              mediaType: 'application/pdf',
+              extension: 'pdf',
+              sizeBytes: 5,
+              contentSha256: 'a'.repeat(64),
+              blobId: `source-file:${FILE_ID}`,
+              sourceVersion: 1,
+              status: 'ready',
+              parseProgress: 100,
+              pageCount: 1,
+              error: null,
+              replacedByFileId: null,
+            },
+          ],
+        }),
+      ),
+    ).toBe(1);
+    expect(projectStageFor(projectWithDraft())).toBe(4);
+  });
+
   it('renders a complete editable task definition and a real material file input', () => {
     const html = renderToStaticMarkup(
       <WorkbenchShell onLogin={vi.fn()} onRegister={vi.fn()} />,
@@ -305,6 +419,7 @@ describe('WB-01 student workbench entry', () => {
 
   it('renders SourceManager for a persisted material-stage project instead of the legacy long lists', () => {
     const current = outlineProject({
+      evidenceCards: [],
       sourceFiles: [
         {
           id: FILE_ID,
@@ -470,6 +585,67 @@ describe('WB-01 student workbench entry', () => {
     expect(html).not.toContain('邮箱或用户名');
     expect(html).not.toContain('设置密码');
     expect(html).not.toContain('使用 Passkey');
+  });
+
+  it('adds a non-blocking model connection entry before the existing account actions', () => {
+    const credentials = createBYOKCredentialStore({
+      sessionStorage: null,
+      localStorage: null,
+    });
+    const html = renderToStaticMarkup(
+      <WorkbenchShell
+        aiSettings={{
+          providerId: 'personal-openai-compatible',
+          displayName: '我的模型',
+          credentials,
+          onSaveConfig: vi.fn(),
+          onDeleteConfig: vi.fn(),
+          onTestConnection: vi.fn(),
+        }}
+        onLogin={vi.fn()}
+        onRegister={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain('>连接模型</button>');
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).toContain('任务工作台');
+    expect(html).not.toContain('连接你自己的模型');
+    expect(html.indexOf('>连接模型</button>')).toBeLessThan(
+      html.indexOf('>登录</button>'),
+    );
+    expect(html.indexOf('>登录</button>')).toBeLessThan(
+      html.indexOf('>注册</button>'),
+    );
+  });
+
+  it('closes model settings back to the exact workbench stage', () => {
+    const stageView: WorkbenchViewState = {
+      activeStage: 4,
+      aiSettingsOpen: false,
+    };
+
+    const settingsView = workbenchViewReducer(stageView, {
+      type: 'open-ai-settings',
+    });
+    expect(settingsView).toEqual({
+      activeStage: 4,
+      aiSettingsOpen: true,
+    });
+    expect(
+      workbenchViewReducer(settingsView, {
+        type: 'close-ai-settings',
+      }),
+    ).toEqual(stageView);
+    expect(
+      workbenchViewReducer(settingsView, {
+        type: 'set-stage',
+        stage: 2,
+      }),
+    ).toEqual({
+      activeStage: 2,
+      aiSettingsOpen: true,
+    });
   });
 
   it('opens save only when the deliverable and at least one traceable source are ready', () => {

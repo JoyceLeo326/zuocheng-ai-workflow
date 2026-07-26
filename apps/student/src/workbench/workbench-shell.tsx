@@ -1,10 +1,20 @@
 import {
+  useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ChangeEvent,
   type FormEvent,
 } from 'react';
+import {
+  AISettingsPanel,
+  type AISettingsPanelProps,
+} from '../ai/ai-settings-panel.js';
+import {
+  CourseCenter,
+  type CourseCenterProps,
+} from '../course/index.js';
 import type { Artifact, Project } from './project-model.js';
 import {
   DraftStage,
@@ -22,6 +32,15 @@ import {
   type OutlineStageCallbacks,
 } from './outline-stage.js';
 import {
+  ProjectManager,
+  type ManagedProject,
+  type ProjectManagerCallbacks,
+} from './project-manager.js';
+import {
+  createProjectManagerController,
+  mapManagedProject,
+} from './project-manager-controller.js';
+import {
   SourceManager,
   type SourceManagerCallbacks,
 } from './source-manager.js';
@@ -31,6 +50,7 @@ import {
   type DraftArtifactPayload,
   type SourceIngestionResult,
   type WorkbenchProjectFormInput,
+  type WorkbenchProjectLifecycleService,
   type WorkbenchService,
 } from './workbench-service.js';
 
@@ -45,10 +65,51 @@ export function studentSurfaceForPath(pathname: string): StudentSurface {
 export interface WorkbenchShellProps {
   onLogin(): void;
   onRegister(): void;
-  service?: WorkbenchService;
+  aiSettings?: AISettingsPanelProps;
+  courseCenter?: Omit<
+    CourseCenterProps,
+    'projects' | 'onOpenProjects'
+  >;
+  service?: WorkbenchProjectLifecycleService;
   initialDraft?: WorkbenchDraft;
   initialMaterials?: File[];
   initialProject?: Project;
+  initialView?: WorkbenchView;
+}
+
+export type WorkbenchView = 'workbench' | 'projects' | 'courses';
+
+export type WorkbenchViewState = Readonly<{
+  activeStage: number;
+  aiSettingsOpen: boolean;
+}>;
+
+export type WorkbenchViewEvent =
+  | Readonly<{ type: 'set-stage'; stage: number }>
+  | Readonly<{ type: 'open-ai-settings' }>
+  | Readonly<{ type: 'close-ai-settings' }>;
+
+export function workbenchViewReducer(
+  state: WorkbenchViewState,
+  event: WorkbenchViewEvent,
+): WorkbenchViewState {
+  if (event.type === 'set-stage') {
+    if (
+      !Number.isSafeInteger(event.stage) ||
+      event.stage < 0 ||
+      event.stage >= workflowStages.length
+    ) {
+      return state;
+    }
+    return Object.freeze({
+      ...state,
+      activeStage: event.stage,
+    });
+  }
+  return Object.freeze({
+    ...state,
+    aiSettingsOpen: event.type === 'open-ai-settings',
+  });
 }
 
 export interface WorkbenchDraft {
@@ -407,6 +468,33 @@ export function workbenchStageAvailable(
   return false;
 }
 
+export function projectStageFor(project: Project): number {
+  if (findDraftArtifact(project) !== null) {
+    return 4;
+  }
+  if (
+    project.activeOutlineId !== null &&
+    project.outlines.some(
+      (outline) =>
+        outline.id === project.activeOutlineId &&
+        (outline.status === 'selected' ||
+          outline.status === 'locked'),
+    )
+  ) {
+    return 3;
+  }
+  if (project.evidenceCards.length > 0) {
+    return 2;
+  }
+  if (
+    project.sourceFiles.length > 0 ||
+    project.sourceChunks.length > 0
+  ) {
+    return 1;
+  }
+  return 0;
+}
+
 export function createDraftStageCallbacks(
   service: WorkbenchService,
   project: Project,
@@ -591,10 +679,13 @@ function CheckIcon() {
 export function WorkbenchShell({
   onLogin,
   onRegister,
+  aiSettings,
+  courseCenter,
   service,
   initialDraft,
   initialMaterials = [],
   initialProject,
+  initialView = 'workbench',
 }: WorkbenchShellProps) {
   const [draft, setDraft] = useState<WorkbenchDraft>(
     initialDraft ??
@@ -612,14 +703,86 @@ export function WorkbenchShell({
   const [savePhase, setSavePhase] = useState<SavePhase>(
     initialProject === undefined ? 'idle' : 'saved',
   );
-  const [saveMessage, setSaveMessage] = useState('');
-  const [activeStage, setActiveStage] = useState(
-    (initialProject?.sourceFiles.length ?? 0) > 0 ? 1 : 0,
+  const [saveMessage, setSaveMessage] = useState(
+    initialProject === undefined ? '' : '任务与材料已保存',
   );
+  const [viewState, setViewState] = useState<WorkbenchViewState>({
+    activeStage:
+      initialProject === undefined
+        ? 0
+        : projectStageFor(initialProject),
+    aiSettingsOpen: false,
+  });
+  const { activeStage, aiSettingsOpen } = viewState;
+  const [view, setView] = useState<WorkbenchView>(initialView);
+  const [managedProjects, setManagedProjects] = useState<
+    readonly ManagedProject[]
+  >(
+    initialProject === undefined
+      ? []
+      : [mapManagedProject(initialProject)],
+  );
+  const [projectManagerError, setProjectManagerError] = useState('');
   const [draftPreparationPhase, setDraftPreparationPhase] =
     useState<DraftPreparationPhase>('idle');
   const [draftPreparationMessage, setDraftPreparationMessage] =
     useState('');
+  const aiSettingsButtonRef = useRef<HTMLButtonElement>(null);
+
+  const restoreProjectState = useCallback((next: Project) => {
+    setProject(next);
+    setDraft(draftFromProject(next));
+    setMaterials([]);
+    setMaterialProgress({});
+    setSavePhase('saved');
+    setSaveMessage('任务与材料已保存');
+    setViewState((current) =>
+      workbenchViewReducer(current, {
+        type: 'set-stage',
+        stage: projectStageFor(next),
+      }),
+    );
+    setDraftPreparationPhase('idle');
+    setDraftPreparationMessage('');
+  }, []);
+
+  const prepareNewProjectState = useCallback((title: string) => {
+    setProject(null);
+    setDraft({
+      ...emptyWorkbenchDraft,
+      taskName: title,
+    });
+    setMaterials([]);
+    setMaterialProgress({});
+    setSavePhase('idle');
+    setSaveMessage('');
+    setViewState((current) =>
+      workbenchViewReducer(current, {
+        type: 'set-stage',
+        stage: 0,
+      }),
+    );
+    setDraftPreparationPhase('idle');
+    setDraftPreparationMessage('');
+    setView('workbench');
+  }, []);
+
+  const projectManagerController = useMemo(
+    () =>
+      service === undefined
+        ? null
+        : createProjectManagerController({
+            service,
+            openProject: async (next) => {
+              restoreProjectState(next);
+              setView('workbench');
+            },
+            prepareNewProject: async (title) => {
+              prepareNewProjectState(title);
+            },
+          }),
+    [prepareNewProjectState, restoreProjectState, service],
+  );
 
   useEffect(() => {
     if (service === undefined) {
@@ -628,15 +791,20 @@ export function WorkbenchShell({
     let cancelled = false;
     void service
       .listProjects()
-      .then(([latest]) => {
-        if (cancelled || latest === undefined) {
+      .then((projects) => {
+        if (cancelled) {
           return;
         }
-        setProject(latest);
-        setDraft(draftFromProject(latest));
-        setSavePhase('saved');
-        setSaveMessage('任务与材料已保存');
-        setActiveStage(latest.sourceFiles.length > 0 ? 1 : 0);
+        setManagedProjects(projects.map(mapManagedProject));
+        if (initialProject !== undefined) {
+          return;
+        }
+        const latest =
+          projects.find((candidate) => candidate.status === 'active') ??
+          projects.find((candidate) => candidate.status === 'archived');
+        if (latest !== undefined) {
+          restoreProjectState(latest);
+        }
       })
       .catch(() => {
         if (!cancelled) {
@@ -647,7 +815,118 @@ export function WorkbenchShell({
     return () => {
       cancelled = true;
     };
-  }, [service]);
+  }, [initialProject, restoreProjectState, service]);
+
+  const syncProjectStateAfterMutation = async () => {
+    if (service === undefined) {
+      return;
+    }
+    const projects = await service.listProjects();
+    setManagedProjects(projects.map(mapManagedProject));
+    if (project === null) {
+      return;
+    }
+    const current = projects.find(
+      (candidate) =>
+        candidate.id === project.id &&
+        candidate.status === 'active',
+    );
+    const next =
+      current ??
+      projects.find((candidate) => candidate.status === 'active') ??
+      null;
+    if (next === null) {
+      setProject(null);
+      setDraft(emptyWorkbenchDraft);
+      setMaterials([]);
+      setMaterialProgress({});
+      setSavePhase('idle');
+      setSaveMessage('');
+      setViewState((current) =>
+        workbenchViewReducer(current, {
+          type: 'set-stage',
+          stage: 0,
+        }),
+      );
+      return;
+    }
+    restoreProjectState(next);
+  };
+
+  const projectManagerCallbacks: ProjectManagerCallbacks | null =
+    projectManagerController === null
+      ? null
+      : {
+          onOpen: projectManagerController.onOpen,
+          onCreate: projectManagerController.onCreate,
+          onDuplicate: async (input) => {
+            await projectManagerController.onDuplicate(input);
+            await syncProjectStateAfterMutation();
+          },
+          onArchive: async (input) => {
+            await projectManagerController.onArchive(input);
+            await syncProjectStateAfterMutation();
+          },
+          onRestore: async (input) => {
+            await projectManagerController.onRestore(input);
+            await syncProjectStateAfterMutation();
+          },
+          onMoveToTrash: async (input) => {
+            await projectManagerController.onMoveToTrash(input);
+            await syncProjectStateAfterMutation();
+          },
+          onDeletePermanently: async (input) => {
+            await projectManagerController.onDeletePermanently(input);
+            await syncProjectStateAfterMutation();
+          },
+          onExportProjectPackage:
+            projectManagerController.onExportProjectPackage,
+          onImportProjectPackage: async (input) => {
+            await projectManagerController.onImportProjectPackage(input);
+            await syncProjectStateAfterMutation();
+          },
+        };
+
+  const showProjectManager = () => {
+    if (projectManagerController === null) {
+      return;
+    }
+    setProjectManagerError('');
+    setViewState((current) =>
+      workbenchViewReducer(current, {
+        type: 'close-ai-settings',
+      }),
+    );
+    setView('projects');
+    void projectManagerController
+      .refresh()
+      .then(setManagedProjects)
+      .catch((reason: unknown) => {
+        setProjectManagerError(errorMessage(reason));
+      });
+  };
+
+  const showCourseCenter = () => {
+    if (courseCenter === undefined) {
+      return;
+    }
+    setViewState((current) =>
+      workbenchViewReducer(current, {
+        type: 'close-ai-settings',
+      }),
+    );
+    setView('courses');
+    if (service !== undefined) {
+      void service
+        .listProjects()
+        .then((projects) => {
+          setManagedProjects(projects.map(mapManagedProject));
+        })
+        .catch(() => {
+          // Course content remains available when projects cannot refresh.
+        });
+    }
+  };
 
   const materialCount =
     materials.length > 0
@@ -702,10 +981,20 @@ export function WorkbenchShell({
       project.activeOutlineId === null ||
       draftArtifact !== null
     ) {
-      setActiveStage(index);
+      setViewState((current) =>
+        workbenchViewReducer(current, {
+          type: 'set-stage',
+          stage: index,
+        }),
+      );
       return;
     }
-    setActiveStage(index);
+    setViewState((current) =>
+      workbenchViewReducer(current, {
+        type: 'set-stage',
+        stage: index,
+      }),
+    );
     setDraftPreparationPhase('preparing');
     setDraftPreparationMessage('');
     void service
@@ -834,7 +1123,12 @@ export function WorkbenchShell({
           ? '任务与材料已保存'
           : `${String(failedCount)} 个材料需要处理`,
       );
-      setActiveStage(1);
+      setViewState((current) =>
+        workbenchViewReducer(current, {
+          type: 'set-stage',
+          stage: 1,
+        }),
+      );
     } catch (reason) {
       setSavePhase('failed');
       setSaveMessage(errorMessage(reason));
@@ -850,13 +1144,67 @@ export function WorkbenchShell({
           <small>STUDENT WORKBENCH</small>
         </a>
         <div className="workbench-topbar__context">
-          <span>任务工作台</span>
+          <span>
+            {aiSettingsOpen
+              ? '连接模型'
+              : view === 'courses'
+                ? '课程中心'
+                : view === 'projects'
+                  ? '项目管理'
+                  : '任务工作台'}
+          </span>
           <i aria-hidden="true" />
           <strong>
-            {project?.title ?? (draft.taskName.trim() || '未命名任务')}
+            {aiSettingsOpen
+              ? '模型设置'
+              : view === 'courses'
+                ? '7 天完成一份作品'
+                : view === 'projects'
+                  ? '全部项目'
+                  : (project?.title ??
+                    (draft.taskName.trim() || '未命名任务'))}
           </strong>
         </div>
-        <nav className="workbench-account" aria-label="账号">
+        <nav className="workbench-account" aria-label="工作台导航">
+          {courseCenter === undefined ? null : (
+            <button
+              aria-current={view === 'courses' ? 'page' : undefined}
+              className="button button--quiet button--compact"
+              onClick={showCourseCenter}
+              type="button"
+            >
+              课程
+            </button>
+          )}
+          {aiSettings === undefined ? null : (
+            <button
+              aria-controls="workbench-ai-settings"
+              aria-expanded={aiSettingsOpen}
+              className="button button--quiet button--compact"
+              onClick={() => {
+                setViewState((current) =>
+                  workbenchViewReducer(current, {
+                    type: current.aiSettingsOpen
+                      ? 'close-ai-settings'
+                      : 'open-ai-settings',
+                  }),
+                );
+              }}
+              ref={aiSettingsButtonRef}
+              type="button"
+            >
+              连接模型
+            </button>
+          )}
+          <button
+            aria-current={view === 'projects' ? 'page' : undefined}
+            className="button button--quiet button--compact"
+            disabled={projectManagerController === null}
+            onClick={showProjectManager}
+            type="button"
+          >
+            项目
+          </button>
           <button
             className="button button--quiet button--compact"
             onClick={onLogin}
@@ -874,6 +1222,78 @@ export function WorkbenchShell({
         </nav>
       </header>
 
+      {aiSettingsOpen && aiSettings !== undefined ? (
+        <section
+          aria-label="模型设置"
+          className="workbench-ai-settings"
+          id="workbench-ai-settings"
+        >
+          <div className="workbench-ai-settings__toolbar">
+            <button
+              autoFocus
+              className="button button--quiet"
+              onClick={() => {
+                setViewState((current) =>
+                  workbenchViewReducer(current, {
+                    type: 'close-ai-settings',
+                  }),
+                );
+                aiSettingsButtonRef.current?.focus();
+              }}
+              type="button"
+            >
+              返回原工作区
+            </button>
+          </div>
+          <AISettingsPanel {...aiSettings} />
+        </section>
+      ) : view === 'courses' && courseCenter !== undefined ? (
+        <section className="workbench-course-center">
+          <div className="workbench-course-center__toolbar">
+            <button
+              className="button button--quiet"
+              onClick={() => setView('workbench')}
+              type="button"
+            >
+              {project === null ? '返回任务编辑' : '返回当前项目'}
+            </button>
+          </div>
+          <CourseCenter
+            {...courseCenter}
+            onOpenProjects={async () => {
+              showProjectManager();
+            }}
+            projects={managedProjects
+              .filter((candidate) => candidate.status === 'active')
+              .map(({ id, title }) => ({ id, title }))}
+          />
+        </section>
+      ) : view === 'projects' && projectManagerCallbacks !== null ? (
+        <section className="workbench-project-manager">
+          <div className="workbench-project-manager__toolbar">
+            <button
+              className="button button--quiet"
+              onClick={() => setView('workbench')}
+              type="button"
+            >
+              {project === null ? '返回任务编辑' : '返回当前项目'}
+            </button>
+          </div>
+          {projectManagerError.length > 0 ? (
+            <div
+              className="workbench-project-manager__error"
+              role="alert"
+            >
+              {projectManagerError}
+            </div>
+          ) : null}
+          <ProjectManager
+            {...projectManagerCallbacks}
+            projects={managedProjects}
+          />
+        </section>
+      ) : (
+        <>
       <header className="workbench-project-header">
         <div>
           <p className="eyebrow">{activeHeader.kicker}</p>
@@ -1432,6 +1852,8 @@ export function WorkbenchShell({
           </div>
         </aside>
       </div>
+        </>
+      )}
     </main>
   );
 }

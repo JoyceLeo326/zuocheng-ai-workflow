@@ -1656,8 +1656,58 @@ mark.status-pill {
 
 .workbench-account {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.55rem;
   align-items: center;
+  justify-content: flex-end;
+}
+
+.workbench-ai-settings {
+  display: grid;
+  width: min(100%, 96rem);
+  min-height: calc(100vh - 5rem);
+  gap: 1rem;
+  align-content: start;
+  justify-items: center;
+  padding: clamp(1rem, 3vw, 2.5rem) 0;
+  margin: 0 auto;
+}
+
+.workbench-ai-settings__toolbar {
+  display: flex;
+  width: min(100%, 58rem);
+  justify-content: flex-start;
+}
+
+.workbench-project-manager {
+  width: min(100%, 96rem);
+  padding: clamp(1.5rem, 4vw, 3rem) 0;
+  margin: 0 auto;
+}
+
+.workbench-project-manager__toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 1rem;
+}
+
+.workbench-project-manager__error {
+  padding: 0.85rem 1rem;
+  margin-bottom: 1rem;
+  border: 1px solid var(--danger);
+  color: var(--paper);
+  background: rgb(255 120 111 / 9%);
+}
+
+.workbench-course-center {
+  width: min(100%, 96rem);
+  margin: 0 auto;
+}
+
+.workbench-course-center__toolbar {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: clamp(1rem, 3vw, 2rem);
 }
 
 .workbench-project-header {
@@ -2543,6 +2593,10 @@ mark.status-pill {
   .workbench-account .button {
     min-height: 2.65rem;
     padding-inline: 0.7rem;
+  }
+
+  .workbench-ai-settings {
+    padding-block: 1rem 2rem;
   }
 
   .workbench-project-header {
