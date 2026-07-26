@@ -5,6 +5,10 @@ import {
   type FormEvent,
 } from 'react';
 import type { Project } from './project-model.js';
+import {
+  EvidenceStage,
+  type EvidenceStageCreateInput,
+} from './evidence-stage.js';
 import type {
   SourceIngestionResult,
   WorkbenchProjectFormInput,
@@ -490,7 +494,9 @@ export function WorkbenchShell({
               const active = index === activeStage;
               const available =
                 index === 0 ||
-                (index === 1 && project !== null);
+                (index === 1 && project !== null) ||
+                (index === 2 &&
+                  (project?.sourceChunks.length ?? 0) > 0);
               return (
                 <li className={active ? 'is-active' : undefined} key={stage.number}>
                   <button
@@ -519,8 +525,11 @@ export function WorkbenchShell({
           </ol>
         </aside>
 
-        <section className="workbench-canvas" aria-labelledby="task-definition-title">
-          <header className="workbench-section-header">
+        <section aria-label="任务工作区" className="workbench-canvas">
+          <header
+            className="workbench-section-header"
+            hidden={activeStage >= 2}
+          >
             <div>
               <span className="section-kicker">
                 {activeStage === 0 ? '01 / DEFINE' : '02 / SOURCES'}
@@ -686,7 +695,11 @@ export function WorkbenchShell({
             </div>
           </form>
 
-          <section className="material-panel" aria-labelledby="materials-title">
+          <section
+            aria-labelledby="materials-title"
+            className="material-panel"
+            hidden={activeStage >= 2}
+          >
             <header>
               <div>
                 <span className="section-kicker">SOURCE MATERIALS</span>
@@ -819,6 +832,35 @@ export function WorkbenchShell({
             ) : null}
           </section>
 
+          {activeStage === 2 && project !== null ? (
+            <EvidenceStage
+              evidenceCards={project.evidenceCards}
+              onCreateEvidence={async (
+                input: EvidenceStageCreateInput,
+              ) => {
+                if (service === undefined) {
+                  throw new Error('当前任务无法写入，请刷新后重试。');
+                }
+                try {
+                  const next = await service.createEvidence(
+                    project.id,
+                    input,
+                  );
+                  setProject(next);
+                  setSavePhase('saved');
+                  setSaveMessage(
+                    `已保存 ${String(next.evidenceCards.length)} 条证据`,
+                  );
+                } catch (reason) {
+                  throw new Error(errorMessage(reason), {
+                    cause: reason,
+                  });
+                }
+              }}
+              project={project}
+            />
+          ) : null}
+
           {activeStage === 0 ? (
             <footer className="workbench-canvas__footer">
               <div aria-live="polite">
@@ -893,11 +935,19 @@ export function WorkbenchShell({
           </ul>
           <div className="workbench-inspector__next">
             <span>下一阶段</span>
-            <strong>{activeStage === 0 ? '材料解析' : '选择证据'}</strong>
+            <strong>
+              {activeStage === 0
+                ? '材料解析'
+                : activeStage === 1
+                  ? '选择证据'
+                  : '组织结构'}
+            </strong>
             <p>
               {activeStage === 0
                 ? '添加材料并保存任务后开放。'
-                : `${String(project?.sourceChunks.length ?? 0)} 个原文片段已保留页码与定位。`}
+                : activeStage === 1
+                  ? `${String(project?.sourceChunks.length ?? 0)} 个原文片段已保留页码与定位。`
+                  : `${String(project?.evidenceCards.length ?? 0)} 条证据已核对并保存。`}
             </p>
           </div>
         </aside>
