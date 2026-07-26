@@ -1,5 +1,5 @@
 import { strToU8, zipSync } from 'fflate';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { MemoryProjectStore } from './project-store.js';
 import {
   SourceParserPortError,
@@ -9,6 +9,7 @@ import {
   WorkbenchServiceInputError,
   createWorkbenchService,
   type WorkbenchProjectFormInput,
+  type WorkbenchService,
 } from './workbench-service.js';
 
 const UUID_V7 =
@@ -92,6 +93,52 @@ async function sha256(value: string): Promise<string> {
   return Array.from(new Uint8Array(digest), (byte) =>
     byte.toString(16).padStart(2, '0'),
   ).join('');
+}
+
+async function serviceWithVerifiedEvidence(): Promise<{
+  store: MemoryProjectStore;
+  service: WorkbenchService;
+  projectId: string;
+  evidenceId: string;
+}> {
+  const store = new MemoryProjectStore();
+  const parser: PdfParserPort = {
+    async parsePdf() {
+      return {
+        pageCount: 1,
+        pages: [{ pageNumber: 1, text: 'Alpha Beta' }],
+      };
+    },
+  };
+  const service = createWorkbenchService({
+    store,
+    pdfParser: parser,
+    idFactory: sequentialIds(),
+    now: () => new Date('2026-07-27T01:00:00.000Z'),
+  });
+  const initial = await service.createProject(form());
+  const ingested = await service.ingestSourceFile(
+    initial.id,
+    pdfFile(),
+  );
+  if (ingested.status !== 'ready') {
+    throw new Error('expected ready source');
+  }
+  const withEvidence = await service.createEvidence(initial.id, {
+    sourceChunkId: ingested.chunks[0]!.id,
+    quote: 'Alpha',
+    kind: 'fact',
+    stance: 'supports',
+    note: 'Supports the first requirement',
+    citation: 'course.pdf, page 1',
+    userConfirmed: true,
+  });
+  return {
+    store,
+    service,
+    projectId: initial.id,
+    evidenceId: withEvidence.evidenceCards[0]!.id,
+  };
 }
 
 describe('WorkbenchService first-stage orchestration', () => {
@@ -516,6 +563,218 @@ describe('WorkbenchService first-stage orchestration', () => {
       name: 'WorkbenchServiceInputError',
       code: 'SOURCE_QUOTE_MISMATCH',
     });
+  });
+
+  it('persists an authored outline through node mutations, selection and locking', async () => {
+    const { store, service, projectId, evidenceId } =
+      await serviceWithVerifiedEvidence();
+    const beforeOutline = await store.getProject(projectId);
+    if (beforeOutline === null) {
+      throw new Error('expected project');
+    }
+    const [firstRequirement, secondRequirement] =
+      beforeOutline.taskDefinition.mustInclude;
+    const [firstRubric, secondRubric] =
+      beforeOutline.taskDefinition.rubric;
+    if (
+      firstRequirement === undefined ||
+      secondRequirement === undefined ||
+      firstRubric === undefined ||
+      secondRubric === undefined
+    ) {
+      throw new Error('expected two requirements and rubric criteria');
+    }
+    const saveSpy = vi.spyOn(store, 'saveProject');
+
+    const created = await service.createOutline(projectId, {
+      title: 'Evidence-led structure',
+      nodes: [
+        {
+          title: 'Core conclusion',
+          conclusion: 'Alpha supports the core conclusion.',
+          evidenceCardIds: [evidenceId],
+          coveredRequirements: [firstRequirement],
+          rubricCriterionIds: [firstRubric.id],
+        },
+      ],
+    });
+    const outlineId = created.outlines[0]!.id;
+    const firstNodeId = created.outlines[0]!.nodes[0]!.id;
+    expect(created).toMatchObject({
+      version: beforeOutline.version + 1,
+      activeOutlineId: null,
+      outlines: [
+        {
+          id: outlineId,
+          status: 'draft',
+          title: 'Evidence-led structure',
+          nodes: [
+            {
+              title: 'Core conclusion',
+              evidenceCardIds: [evidenceId],
+              coveredRequirements: [firstRequirement],
+              rubricCriterionIds: [firstRubric.id],
+            },
+          ],
+        },
+      ],
+    });
+
+    await expect(
+      service.selectOutline(projectId, outlineId),
+    ).rejects.toMatchObject({
+      name: 'OutlineOperationError',
+      code: 'MISSING_DELIVERY_COVERAGE',
+    });
+    await expect(store.getProject(projectId)).resolves.toEqual(created);
+
+    const withSecond = await service.addOutlineNode(
+      projectId,
+      outlineId,
+      {
+        title: 'Source index',
+        conclusion: 'Every conclusion keeps a source reference.',
+        evidenceCardIds: [evidenceId],
+        coveredRequirements: [secondRequirement],
+        rubricCriterionIds: [secondRubric.id],
+      },
+    );
+    const secondNodeId = withSecond.outlines[0]!.nodes[1]!.id;
+    const withThird = await service.addOutlineNode(
+      projectId,
+      outlineId,
+      {
+        title: 'Transition',
+        conclusion: 'Connect the two required sections.',
+        evidenceCardIds: [evidenceId],
+        coveredRequirements: [],
+        rubricCriterionIds: [],
+      },
+    );
+    const thirdNodeId = withThird.outlines[0]!.nodes[2]!.id;
+    const updated = await service.updateOutlineNode(
+      projectId,
+      outlineId,
+      thirdNodeId,
+      {
+        title: 'Evidence transition',
+        conclusion: 'Connect both requirements using confirmed evidence.',
+      },
+    );
+    expect(updated.outlines[0]!.nodes[2]).toMatchObject({
+      id: thirdNodeId,
+      title: 'Evidence transition',
+      version: 2,
+    });
+
+    const reordered = await service.reorderOutlineNode(
+      projectId,
+      outlineId,
+      thirdNodeId,
+      0,
+    );
+    expect(reordered.outlines[0]!.nodes.map((node) => node.id)).toEqual([
+      thirdNodeId,
+      firstNodeId,
+      secondNodeId,
+    ]);
+    expect(reordered.outlines[0]!.nodes.map((node) => node.position)).toEqual([
+      0, 1, 2,
+    ]);
+
+    const deleted = await service.deleteOutlineNode(
+      projectId,
+      outlineId,
+      thirdNodeId,
+    );
+    expect(deleted.outlines[0]!.nodes.map((node) => node.id)).toEqual([
+      firstNodeId,
+      secondNodeId,
+    ]);
+    const selected = await service.selectOutline(projectId, outlineId);
+    expect(selected).toMatchObject({
+      activeOutlineId: outlineId,
+      outlines: [{ id: outlineId, status: 'selected' }],
+    });
+
+    const locked = await service.lockOutline(projectId, outlineId);
+    expect(locked.activeOutlineId).toBe(outlineId);
+    expect(locked.outlines[0]).toMatchObject({
+      id: outlineId,
+      status: 'locked',
+      lockedAt: expect.any(String),
+    });
+    expect(locked.outlines[0]!.nodes.every((node) => node.locked)).toBe(true);
+    await expect(
+      service.addOutlineNode(projectId, outlineId, {
+        title: 'Forbidden mutation',
+        conclusion: 'A locked outline cannot change.',
+        evidenceCardIds: [evidenceId],
+        coveredRequirements: [],
+        rubricCriterionIds: [],
+      }),
+    ).rejects.toMatchObject({
+      name: 'OutlineOperationError',
+      code: 'OUTLINE_LOCKED',
+    });
+    await expect(store.getProject(projectId)).resolves.toEqual(locked);
+
+    for (const [savedProject, expectedVersion] of saveSpy.mock.calls) {
+      expect(savedProject.version).toBe(expectedVersion + 1);
+    }
+  });
+
+  it('never invents nodes and rejects unconfirmed evidence before outline persistence', async () => {
+    const { store, service, projectId } =
+      await serviceWithVerifiedEvidence();
+    const current = await store.getProject(projectId);
+    if (current === null) {
+      throw new Error('expected project');
+    }
+    const sourceChunk = current.sourceChunks[0]!;
+    const withPendingEvidence = await service.createEvidence(projectId, {
+      sourceChunkId: sourceChunk.id,
+      quote: 'Beta',
+      kind: 'fact',
+      stance: 'neutral',
+      note: 'Pending user review',
+      citation: 'course.pdf, page 1',
+      userConfirmed: false,
+    });
+    const pendingEvidenceId = withPendingEvidence.evidenceCards.find(
+      (evidence) => evidence.status === 'selected',
+    )!.id;
+
+    await expect(
+      service.createOutline(projectId, {
+        title: 'No generated placeholder',
+        nodes: [],
+      }),
+    ).rejects.toMatchObject({
+      name: 'OutlineOperationError',
+      code: 'INVALID_OUTLINE_STATE',
+    });
+    await expect(
+      service.createOutline(projectId, {
+        title: 'Unconfirmed structure',
+        nodes: [
+          {
+            title: 'Pending claim',
+            conclusion: 'This claim is not confirmed.',
+            evidenceCardIds: [pendingEvidenceId],
+            coveredRequirements: [],
+            rubricCriterionIds: [],
+          },
+        ],
+      }),
+    ).rejects.toMatchObject({
+      name: 'OutlineOperationError',
+      code: 'UNCONFIRMED_EVIDENCE',
+    });
+    await expect(store.getProject(projectId)).resolves.toEqual(
+      withPendingEvidence,
+    );
+    expect(withPendingEvidence.outlines).toEqual([]);
   });
 
   it('ingests a real DOCX archive through the workbench pipeline', async () => {

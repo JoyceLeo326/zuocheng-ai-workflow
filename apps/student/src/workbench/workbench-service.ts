@@ -2,6 +2,7 @@ import {
   PROJECT_SCHEMA_VERSION,
   parseProject,
   type OutputFormat,
+  type Outline,
   type Project,
   type EvidenceKind,
   type RubricCriterion,
@@ -12,6 +13,17 @@ import {
   ProjectNotFoundError,
   type ProjectStore,
 } from './project-store.js';
+import {
+  addOutlineNode as addNode,
+  assertValidOutline,
+  deleteOutlineNode as deleteNode,
+  OutlineOperationError,
+  reorderOutlineNode as reorderNode,
+  updateOutlineNode as updateNode,
+  type EvidenceBoundOutline,
+  type OutlineNodePatch,
+  type OutlineValidationContext,
+} from './outline-operations.js';
 import {
   beginSourceParsing,
   computeSourceFileSha256,
@@ -67,6 +79,27 @@ export interface WorkbenchEvidenceInput {
   userConfirmed: boolean;
 }
 
+export interface WorkbenchOutlineNodeInput {
+  title: string;
+  conclusion: string;
+  evidenceCardIds: readonly string[];
+  coveredRequirements: readonly string[];
+  rubricCriterionIds: readonly string[];
+}
+
+export interface WorkbenchCreateOutlineInput {
+  title: string;
+  nodes: readonly WorkbenchOutlineNodeInput[];
+}
+
+export interface WorkbenchOutlineNodePatchInput {
+  title?: string;
+  conclusion?: string;
+  evidenceCardIds?: readonly string[];
+  coveredRequirements?: readonly string[];
+  rubricCriterionIds?: readonly string[];
+}
+
 export type SourceIngestionFailureCode =
   | SourceParserFailureCode
   | BrowserSourceParserErrorCode
@@ -99,6 +132,34 @@ export interface WorkbenchService {
     projectId: string,
     input: WorkbenchEvidenceInput,
   ): Promise<Project>;
+  createOutline(
+    projectId: string,
+    input: WorkbenchCreateOutlineInput,
+  ): Promise<Project>;
+  addOutlineNode(
+    projectId: string,
+    outlineId: string,
+    input: WorkbenchOutlineNodeInput,
+  ): Promise<Project>;
+  updateOutlineNode(
+    projectId: string,
+    outlineId: string,
+    nodeId: string,
+    patch: WorkbenchOutlineNodePatchInput,
+  ): Promise<Project>;
+  deleteOutlineNode(
+    projectId: string,
+    outlineId: string,
+    nodeId: string,
+  ): Promise<Project>;
+  reorderOutlineNode(
+    projectId: string,
+    outlineId: string,
+    nodeId: string,
+    targetPosition: number,
+  ): Promise<Project>;
+  selectOutline(projectId: string, outlineId: string): Promise<Project>;
+  lockOutline(projectId: string, outlineId: string): Promise<Project>;
   ingestSourceFile(
     projectId: string,
     file: File,
@@ -119,7 +180,9 @@ export type WorkbenchServiceInputErrorCode =
   | 'SOURCE_QUOTE_MISMATCH'
   | 'AMBIGUOUS_SOURCE_QUOTE'
   | 'DUPLICATE_EVIDENCE'
-  | 'EVIDENCE_CONFIRMATION_REQUIRED';
+  | 'EVIDENCE_CONFIRMATION_REQUIRED'
+  | 'OUTLINE_NOT_FOUND'
+  | 'OUTLINE_NOT_SELECTED';
 
 export class WorkbenchServiceInputError extends Error {
   constructor(readonly code: WorkbenchServiceInputErrorCode) {
@@ -290,6 +353,197 @@ class DefaultWorkbenchService implements WorkbenchService {
       ],
     });
     return this.store.saveProject(next, current.version);
+  }
+
+  async createOutline(
+    projectId: string,
+    input: WorkbenchCreateOutlineInput,
+  ): Promise<Project> {
+    const current = await this.requireProject(projectId);
+    if (input.nodes.length === 0) {
+      throw new OutlineOperationError('INVALID_OUTLINE_STATE', 'nodes');
+    }
+
+    const updatedAt = this.timestampAfter(current.updatedAt);
+    let outline: EvidenceBoundOutline = {
+      id: this.idFactory(),
+      version: 1,
+      createdAt: updatedAt,
+      updatedAt,
+      projectId,
+      title: input.title,
+      status: 'draft',
+      lockedAt: null,
+      nodes: [],
+    };
+    for (const node of input.nodes) {
+      outline = addNode(outline, {
+        id: this.idFactory(),
+        title: node.title,
+        conclusion: node.conclusion,
+        evidenceCardIds: node.evidenceCardIds,
+        coveredRequirements: node.coveredRequirements,
+        rubricCriterionIds: node.rubricCriterionIds,
+        now: updatedAt,
+      });
+    }
+    outline = {
+      ...outline,
+      version: 1,
+    };
+    this.assertOutlineReferences(outline, current);
+    return this.saveOutline(current, outline, updatedAt);
+  }
+
+  async addOutlineNode(
+    projectId: string,
+    outlineId: string,
+    input: WorkbenchOutlineNodeInput,
+  ): Promise<Project> {
+    const current = await this.requireProject(projectId);
+    const outline = this.findOutline(current, outlineId);
+    const updatedAt = this.timestampAfter(current.updatedAt);
+    const updated = addNode(outline, {
+      id: this.idFactory(),
+      title: input.title,
+      conclusion: input.conclusion,
+      evidenceCardIds: input.evidenceCardIds,
+      coveredRequirements: input.coveredRequirements,
+      rubricCriterionIds: input.rubricCriterionIds,
+      now: updatedAt,
+    });
+    this.assertOutlineForPersistence(updated, current);
+    return this.saveOutline(current, updated, updatedAt);
+  }
+
+  async updateOutlineNode(
+    projectId: string,
+    outlineId: string,
+    nodeId: string,
+    patch: WorkbenchOutlineNodePatchInput,
+  ): Promise<Project> {
+    const current = await this.requireProject(projectId);
+    const outline = this.findOutline(current, outlineId);
+    const updatedAt = this.timestampAfter(current.updatedAt);
+    const operationPatch: OutlineNodePatch = {};
+    if (patch.title !== undefined) {
+      operationPatch.title = patch.title;
+    }
+    if (patch.conclusion !== undefined) {
+      operationPatch.conclusion = patch.conclusion;
+    }
+    if (patch.evidenceCardIds !== undefined) {
+      operationPatch.evidenceCardIds = patch.evidenceCardIds;
+    }
+    if (patch.coveredRequirements !== undefined) {
+      operationPatch.coveredRequirements = patch.coveredRequirements;
+    }
+    if (patch.rubricCriterionIds !== undefined) {
+      operationPatch.rubricCriterionIds = patch.rubricCriterionIds;
+    }
+    const updated = updateNode(
+      outline,
+      nodeId,
+      operationPatch,
+      updatedAt,
+    );
+    this.assertOutlineForPersistence(updated, current);
+    return this.saveOutline(current, updated, updatedAt);
+  }
+
+  async deleteOutlineNode(
+    projectId: string,
+    outlineId: string,
+    nodeId: string,
+  ): Promise<Project> {
+    const current = await this.requireProject(projectId);
+    const outline = this.findOutline(current, outlineId);
+    const updatedAt = this.timestampAfter(current.updatedAt);
+    const updated = deleteNode(outline, nodeId, updatedAt);
+    this.assertOutlineForPersistence(updated, current);
+    return this.saveOutline(current, updated, updatedAt);
+  }
+
+  async reorderOutlineNode(
+    projectId: string,
+    outlineId: string,
+    nodeId: string,
+    targetPosition: number,
+  ): Promise<Project> {
+    const current = await this.requireProject(projectId);
+    const outline = this.findOutline(current, outlineId);
+    const updatedAt = this.timestampAfter(current.updatedAt);
+    const updated = reorderNode(
+      outline,
+      nodeId,
+      targetPosition,
+      updatedAt,
+    );
+    this.assertOutlineForPersistence(updated, current);
+    return this.saveOutline(current, updated, updatedAt);
+  }
+
+  async selectOutline(
+    projectId: string,
+    outlineId: string,
+  ): Promise<Project> {
+    const current = await this.requireProject(projectId);
+    const outline = this.findOutline(current, outlineId);
+    if (outline.status === 'locked' || outline.status === 'archived') {
+      throw new OutlineOperationError('OUTLINE_LOCKED', 'status');
+    }
+    const updatedAt = this.timestampAfter(current.updatedAt);
+    const selected: EvidenceBoundOutline = {
+      ...outline,
+      version: outline.version + 1,
+      updatedAt,
+      status: 'selected',
+      lockedAt: null,
+    };
+    this.assertOutlineForPersistence(selected, current);
+    return this.saveOutline(
+      current,
+      selected,
+      updatedAt,
+      selected.id,
+    );
+  }
+
+  async lockOutline(
+    projectId: string,
+    outlineId: string,
+  ): Promise<Project> {
+    const current = await this.requireProject(projectId);
+    const outline = this.findOutline(current, outlineId);
+    if (outline.status === 'locked' || outline.status === 'archived') {
+      throw new OutlineOperationError('OUTLINE_LOCKED', 'status');
+    }
+    if (
+      outline.status !== 'selected' ||
+      current.activeOutlineId !== outline.id
+    ) {
+      throw new WorkbenchServiceInputError('OUTLINE_NOT_SELECTED');
+    }
+
+    const updatedAt = this.timestampAfter(current.updatedAt);
+    let withLockedNodes = outline;
+    for (const node of outline.nodes) {
+      withLockedNodes = updateNode(
+        withLockedNodes,
+        node.id,
+        { locked: true },
+        updatedAt,
+      );
+    }
+    const locked: EvidenceBoundOutline = {
+      ...withLockedNodes,
+      version: outline.version + 1,
+      updatedAt,
+      status: 'locked',
+      lockedAt: updatedAt,
+    };
+    this.assertOutlineForPersistence(locked, current);
+    return this.saveOutline(current, locked, updatedAt, locked.id);
   }
 
   async ingestSourceFile(
@@ -501,6 +755,153 @@ class DefaultWorkbenchService implements WorkbenchService {
         (chunk) => chunk.sourceFileId === sourceId,
       ),
     };
+  }
+
+  private async requireProject(projectId: string): Promise<Project> {
+    const project = await this.store.getProject(projectId);
+    if (project === null) {
+      throw new ProjectNotFoundError(projectId);
+    }
+    return project;
+  }
+
+  private findOutline(
+    project: Project,
+    outlineId: string,
+  ): EvidenceBoundOutline {
+    const outline = project.outlines.find(
+      (candidate) => candidate.id === outlineId,
+    );
+    if (outline === undefined) {
+      throw new WorkbenchServiceInputError('OUTLINE_NOT_FOUND');
+    }
+    return outline;
+  }
+
+  private assertOutlineForPersistence(
+    outline: EvidenceBoundOutline,
+    project: Project,
+  ): void {
+    this.assertOutlineReferences(outline, project);
+    if (outline.status === 'selected' || outline.status === 'locked') {
+      assertValidOutline(
+        outline,
+        this.outlineValidationContext(project),
+      );
+    }
+  }
+
+  private assertOutlineReferences(
+    outline: EvidenceBoundOutline,
+    project: Project,
+  ): void {
+    if (outline.nodes.length === 0) {
+      throw new OutlineOperationError(
+        'INVALID_OUTLINE_STATE',
+        'nodes',
+      );
+    }
+    const evidenceById = new Map(
+      project.evidenceCards.map((evidence) => [evidence.id, evidence]),
+    );
+    const allowedRequirements = new Set(
+      project.taskDefinition.mustInclude,
+    );
+    const allowedRubricIds = new Set(
+      project.taskDefinition.rubric.map((criterion) => criterion.id),
+    );
+    for (const [index, node] of outline.nodes.entries()) {
+      if (node.evidenceCardIds.length === 0) {
+        throw new OutlineOperationError(
+          'EVIDENCE_REQUIRED',
+          `nodes[${String(index)}].evidenceCardIds`,
+        );
+      }
+      for (const evidenceId of node.evidenceCardIds) {
+        const evidence = evidenceById.get(evidenceId);
+        if (
+          evidence === undefined ||
+          evidence.projectId !== outline.projectId
+        ) {
+          throw new OutlineOperationError(
+            'UNKNOWN_EVIDENCE',
+            `nodes[${String(index)}].evidenceCardIds`,
+          );
+        }
+        if (
+          evidence.status !== 'verified' ||
+          evidence.confirmationStatus !== 'confirmed' ||
+          evidence.userConfirmedAt === null ||
+          evidence.userConfirmedAt === undefined
+        ) {
+          throw new OutlineOperationError(
+            'UNCONFIRMED_EVIDENCE',
+            `nodes[${String(index)}].evidenceCardIds`,
+          );
+        }
+      }
+      for (const requirement of node.coveredRequirements) {
+        if (!allowedRequirements.has(requirement)) {
+          throw new OutlineOperationError(
+            'UNKNOWN_DELIVERY_REQUIREMENT',
+            `nodes[${String(index)}].coveredRequirements`,
+          );
+        }
+      }
+      for (const rubricId of node.rubricCriterionIds) {
+        if (!allowedRubricIds.has(rubricId)) {
+          throw new OutlineOperationError(
+            'UNKNOWN_RUBRIC_CRITERION',
+            `nodes[${String(index)}].rubricCriterionIds`,
+          );
+        }
+      }
+    }
+  }
+
+  private outlineValidationContext(
+    project: Project,
+  ): OutlineValidationContext {
+    return {
+      taskDefinition: project.taskDefinition,
+      evidenceCards: project.evidenceCards.map((evidence) => ({
+        ...evidence,
+        stance:
+          evidence.stance === 'support' ||
+          evidence.stance === 'supports'
+            ? 'supports'
+            : evidence.stance === 'oppose' ||
+                evidence.stance === 'opposes'
+              ? 'opposes'
+              : 'neutral',
+        confirmationStatus: evidence.confirmationStatus ?? 'pending',
+        confirmedAt: evidence.userConfirmedAt ?? null,
+      })),
+    };
+  }
+
+  private async saveOutline(
+    current: Project,
+    outline: EvidenceBoundOutline,
+    updatedAt: string,
+    activeOutlineId: string | null = current.activeOutlineId,
+  ): Promise<Project> {
+    const existing = current.outlines.some(
+      (candidate) => candidate.id === outline.id,
+    );
+    const outlines: Outline[] = existing
+      ? current.outlines.map((candidate) =>
+          candidate.id === outline.id ? outline : candidate,
+        )
+      : [...current.outlines, outline];
+    const next = parseProject({
+      ...current,
+      version: current.version + 1,
+      updatedAt,
+      outlines,
+      activeOutlineId,
+    });
+    return this.store.saveProject(next, current.version);
   }
 
   private async persistParseFailure(
