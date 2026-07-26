@@ -11,7 +11,7 @@ permissions:
 jobs:
   verify:
     name: Lint, typecheck, test, and build
-    runs-on: [self-hosted, tenant-managed, linux, x64]
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - name: Check out the requested commit without write credentials
@@ -19,7 +19,12 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Verify pinned toolchain
+      - name: Install the pinned Node runtime
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: Verify the pinned toolchain
         shell: bash
         run: |
           set -euo pipefail
@@ -33,10 +38,12 @@ jobs:
       - name: Run all repository gates
         run: pnpm verify
 
+      - name: Build the production Vercel bundle
+        run: pnpm build:vercel
+
       - name: Prove verification did not rewrite source
         shell: bash
         run: |
           set -euo pipefail
           git diff --check
           test -z "$(git status --porcelain)"
-
