@@ -1,0 +1,328 @@
+import { describe, expect, it } from 'vitest';
+import { MemoryProjectStore } from './project-store.js';
+import {
+  SourceParserPortError,
+  type PdfParserPort,
+} from './source-file.js';
+import {
+  WorkbenchServiceInputError,
+  createWorkbenchService,
+  type WorkbenchProjectFormInput,
+} from './workbench-service.js';
+
+const UUID_V7 =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-8[0-9a-f]{3}-[0-9a-f]{12}$/u;
+
+function form(
+  overrides: Partial<WorkbenchProjectFormInput> = {},
+): WorkbenchProjectFormInput {
+  return {
+    projectTitle: '课程路演项目',
+    taskName: '三页课程汇报',
+    audience: '课程教师与同学',
+    deadline: '2026-08-15T09:00:00.000Z',
+    scope: '12 页',
+    durationMinutes: '8',
+    outputFormat: 'presentation',
+    tone: 'academic',
+    rubric: [
+      {
+        title: '论证',
+        description: '结论必须由材料支持',
+        weightPercent: '60',
+      },
+      {
+        title: '表达',
+        description: '结构清楚且适合讲述',
+        weightPercent: '40',
+      },
+    ],
+    requiredContent: '核心结论\n来源索引',
+    forbiddenContent: '无来源数字\n夸大因果',
+    ...overrides,
+  };
+}
+
+function sequentialIds(): () => string {
+  let sequence = 1;
+  return () => {
+    const suffix = String(sequence).padStart(12, '0');
+    sequence += 1;
+    return `01900000-0000-7000-8000-${suffix}`;
+  };
+}
+
+function pdfFile(content = '%PDF-real-source'): File {
+  return new File([content], 'course.pdf', {
+    type: 'application/pdf',
+  });
+}
+
+async function sha256(value: string): Promise<string> {
+  const digest = await globalThis.crypto.subtle.digest(
+    'SHA-256',
+    new TextEncoder().encode(value),
+  );
+  return Array.from(new Uint8Array(digest), (byte) =>
+    byte.toString(16).padStart(2, '0'),
+  ).join('');
+}
+
+describe('WorkbenchService first-stage orchestration', () => {
+  it('creates and persists a strict versioned project from UI-ready task input', async () => {
+    const store = new MemoryProjectStore();
+    const service = createWorkbenchService({
+      store,
+      idFactory: sequentialIds(),
+      now: () => new Date('2026-07-27T01:00:00.000Z'),
+    });
+
+    const created = await service.createProject(form());
+
+    expect(created).toMatchObject({
+      version: 1,
+      title: '课程路演项目',
+      status: 'active',
+      taskDefinition: {
+        taskName: '三页课程汇报',
+        audience: '课程教师与同学',
+        dueAt: '2026-08-15T09:00:00.000Z',
+        lengthTarget: { unit: 'pages', value: 12 },
+        presentationDurationMinutes: 8,
+        outputFormats: ['pptx', 'pdf'],
+        tone: 'academic',
+        mustInclude: ['核心结论', '来源索引'],
+        mustAvoid: ['无来源数字', '夸大因果'],
+        rubric: [
+          {
+            title: '论证',
+            description: '结论必须由材料支持',
+            weightPercent: 60,
+          },
+          {
+            title: '表达',
+            description: '结构清楚且适合讲述',
+            weightPercent: 40,
+          },
+        ],
+      },
+      sourceFiles: [],
+      sourceChunks: [],
+    });
+    expect(created.id).toMatch(UUID_V7);
+    expect(created.taskDefinition.id).toMatch(UUID_V7);
+    expect(created.taskDefinition.rubric.map((item) => item.id)).toEqual([
+      expect.stringMatching(UUID_V7),
+      expect.stringMatching(UUID_V7),
+    ]);
+    await expect(store.getProject(created.id)).resolves.toEqual(created);
+  });
+
+  it('parses word targets and rejects ambiguous targets or rubric totals before persistence', async () => {
+    const store = new MemoryProjectStore();
+    const service = createWorkbenchService({
+      store,
+      idFactory: sequentialIds(),
+      now: () => new Date('2026-07-27T01:00:00.000Z'),
+    });
+
+    const wordProject = await service.createProject(
+      form({
+        projectTitle: '文字报告',
+        taskName: '课程论文',
+        scope: '3000 words',
+      }),
+    );
+    expect(wordProject.taskDefinition.lengthTarget).toEqual({
+      unit: 'words',
+      value: 3000,
+    });
+
+    await expect(
+      service.createProject(form({ scope: '大约十二页' })),
+    ).rejects.toMatchObject({
+      name: 'WorkbenchServiceInputError',
+      code: 'INVALID_LENGTH_TARGET',
+    });
+    await expect(
+      service.createProject(
+        form({
+          rubric: [
+            {
+              title: '论证',
+              description: '结论必须由材料支持',
+              weightPercent: '80',
+            },
+          ],
+        }),
+      ),
+    ).rejects.toBeInstanceOf(WorkbenchServiceInputError);
+    await expect(store.listProjects()).resolves.toHaveLength(1);
+  });
+
+  it('validates, hashes, deduplicates and persists a PDF with real page ranges and hashes', async () => {
+    const store = new MemoryProjectStore();
+    let parserCalls = 0;
+    const parser: PdfParserPort = {
+      async parsePdf() {
+        parserCalls += 1;
+        return {
+          pageCount: 2,
+          pages: [
+            { pageNumber: 1, text: 'Alpha' },
+            { pageNumber: 2, text: '人工智能' },
+          ],
+        };
+      },
+    };
+    const service = createWorkbenchService({
+      store,
+      pdfParser: parser,
+      idFactory: sequentialIds(),
+      now: () => new Date('2026-07-27T01:00:00.000Z'),
+    });
+    const initial = await service.createProject(
+      form({
+        rubric: [
+          {
+            title: '证据',
+            description: '引用真实材料',
+            weightPercent: '100',
+          },
+        ],
+      }),
+    );
+    const file = pdfFile();
+
+    const ready = await service.ingestSourceFile(initial.id, file);
+
+    expect(ready.status).toBe('ready');
+    if (ready.status !== 'ready') {
+      throw new Error('expected ready ingestion');
+    }
+    expect(parserCalls).toBe(1);
+    expect(ready.project.version).toBe(5);
+    expect(ready.sourceFile).toMatchObject({
+      projectId: initial.id,
+      fileName: 'course.pdf',
+      mediaType: 'application/pdf',
+      extension: 'pdf',
+      sizeBytes: file.size,
+      contentSha256: await sha256('%PDF-real-source'),
+      sourceVersion: 1,
+      status: 'ready',
+      parseProgress: 100,
+      pageCount: 2,
+      error: null,
+    });
+    expect(ready.chunks).toEqual([
+      expect.objectContaining({
+        projectId: initial.id,
+        sourceFileId: ready.sourceFile.id,
+        ordinal: 0,
+        pageNumber: 1,
+        pageLabel: '1',
+        characterStart: 0,
+        characterEnd: 5,
+        text: 'Alpha',
+        contentSha256: await sha256('Alpha'),
+      }),
+      expect.objectContaining({
+        projectId: initial.id,
+        sourceFileId: ready.sourceFile.id,
+        ordinal: 1,
+        pageNumber: 2,
+        pageLabel: '2',
+        characterStart: 6,
+        characterEnd: 10,
+        text: '人工智能',
+        contentSha256: await sha256('人工智能'),
+      }),
+    ]);
+    await expect(store.getProject(initial.id)).resolves.toEqual(ready.project);
+    await expect(
+      store.getSourceChunks(initial.id, ready.sourceFile.id),
+    ).resolves.toEqual(ready.chunks);
+    expect(
+      await (
+        await store.getSourceBlob(initial.id, ready.sourceFile.id)
+      )?.text()
+    ).toBe('%PDF-real-source');
+
+    const duplicate = await service.ingestSourceFile(initial.id, file);
+    expect(duplicate).toMatchObject({
+      status: 'duplicate',
+      project: { id: initial.id, version: 5 },
+      existingSourceFileId: ready.sourceFile.id,
+    });
+    expect(parserCalls).toBe(1);
+    expect(duplicate.project.sourceFiles).toHaveLength(1);
+  });
+
+  it('persists an exact failed parse state and never claims ready or creates chunks', async () => {
+    const store = new MemoryProjectStore();
+    const parser: PdfParserPort = {
+      async parsePdf() {
+        throw new SourceParserPortError('CORRUPT_PDF');
+      },
+    };
+    const service = createWorkbenchService({
+      store,
+      pdfParser: parser,
+      idFactory: sequentialIds(),
+      now: () => new Date('2026-07-27T01:00:00.000Z'),
+    });
+    const initial = await service.createProject(
+      form({
+        rubric: [
+          {
+            title: '证据',
+            description: '引用真实材料',
+            weightPercent: '100',
+          },
+        ],
+      }),
+    );
+    const invalidMime = new File(['not-pdf'], 'course.pdf', {
+      type: 'text/plain',
+    });
+    await expect(
+      service.ingestSourceFile(initial.id, invalidMime),
+    ).rejects.toMatchObject({
+      name: 'SourceFileValidationError',
+      code: 'MIME_EXTENSION_MISMATCH',
+    });
+    await expect(store.getProject(initial.id)).resolves.toEqual(initial);
+
+    const file = pdfFile('%PDF-damaged');
+    const failed = await service.ingestSourceFile(initial.id, file);
+
+    expect(failed.status).toBe('failed');
+    if (failed.status !== 'failed') {
+      throw new Error('expected failed ingestion');
+    }
+    expect(failed.errorCode).toBe('CORRUPT_PDF');
+    expect(failed.project.version).toBe(4);
+    expect(failed.sourceFile).toMatchObject({
+      status: 'failed',
+      parseProgress: 0,
+      pageCount: null,
+      error: {
+        code: 'CORRUPT_PDF',
+        retryable: true,
+      },
+    });
+    expect(failed.project.sourceChunks).toEqual([]);
+    await expect(
+      store.getSourceChunks(initial.id, failed.sourceFile.id),
+    ).resolves.toEqual([]);
+    await expect(store.getProject(initial.id)).resolves.toEqual(
+      failed.project,
+    );
+    expect(
+      await (
+        await store.getSourceBlob(initial.id, failed.sourceFile.id)
+      )?.text()
+    ).toBe('%PDF-damaged');
+  });
+});
