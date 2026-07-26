@@ -20,6 +20,12 @@ const studentDist = resolve(
   'student',
   'dist',
 );
+const adminDist = resolve(
+  repositoryRoot,
+  'apps',
+  'admin',
+  'dist',
+);
 
 await rm(outputRoot, { force: true, recursive: true });
 await mkdir(outputRoot, { recursive: true });
@@ -27,5 +33,10 @@ await cp(marketingDist, outputRoot, { recursive: true });
 await cp(studentDist, resolve(outputRoot, 'app'), {
   recursive: true,
 });
+await cp(adminDist, resolve(outputRoot, 'admin'), {
+  recursive: true,
+});
 
-stdout.write('Vercel bundle assembled: marketing /, workbench /app/.\n');
+stdout.write(
+  'Vercel bundle assembled: marketing /, workbench /app/, admin /admin/.\n',
+);
