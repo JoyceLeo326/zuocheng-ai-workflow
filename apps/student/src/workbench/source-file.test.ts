@@ -355,6 +355,27 @@ describe('workbench source files', () => {
     });
   });
 
+  it('preserves OCR_REQUIRED as an explicit parser failure', async () => {
+    const file = pdfFile();
+    const failed = await runPdfParsing(
+      beginSourceParsing(sourceFile()),
+      file,
+      {
+        parsePdf: vi.fn(async () => {
+          throw new SourceParserPortError('OCR_REQUIRED');
+        }),
+      },
+    );
+
+    expect(failed.parsing).toEqual({
+      status: 'failed',
+      attempt: 1,
+      code: 'OCR_REQUIRED',
+      retryable: true,
+      replaceable: true,
+    });
+  });
+
   it('does not parse a non-PDF source or permit invalid state transitions', async () => {
     const textFile = new File(['real text'], 'notes.txt', {
       type: 'text/plain',
