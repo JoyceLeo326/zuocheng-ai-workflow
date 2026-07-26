@@ -6,11 +6,21 @@ import { Hono } from 'hono';
 import type { Context } from 'hono';
 import type { DeploymentMode, HealthStatus } from '@zuocheng/contracts';
 import {
+  identityLifecycleUnavailableProblem,
   mapErrorToProblem,
   notFoundProblem,
   projectServiceUnavailableProblem,
 } from './http/problems.js';
 import { createUuidV7 } from './http/request-id.js';
+import {
+  registerIdentityRoutes,
+  type IdentityRouteDependencies,
+} from './auth/http/identity-routes.js';
+import type {
+  IdentityHttpSecurityPort,
+  IdentityLifecycleService,
+  IdentityRateLimiter,
+} from './auth/http/identity-lifecycle-service.js';
 import {
   registerProjectRoutes,
   type ProjectRouteResolver,
@@ -29,6 +39,9 @@ type CreateAppOptions = {
   productionReadinessProbe?: ProductionReadinessProbe;
   tenantSessionResolver?: ProjectRouteResolver;
   projectService?: ProjectRouteService;
+  identityLifecycleService?: IdentityLifecycleService;
+  identityHttpSecurity?: IdentityHttpSecurityPort;
+  identityRateLimiter?: IdentityRateLimiter;
 };
 
 export type ProductionDependencyStatus = Readonly<{
@@ -120,6 +133,27 @@ export function createApp(
     }),
   );
 
+  const identityDependencies = configuredIdentityDependencies(options);
+  if (identityDependencies !== undefined) {
+    registerIdentityRoutes(app, identityDependencies);
+  } else {
+    const unavailable = (context: Context<ApiEnvironment>) =>
+      context.json(
+        identityLifecycleUnavailableProblem(context.get('requestId')),
+        503,
+        {
+          'Content-Type': 'application/problem+json',
+          'Cache-Control': 'private, no-store',
+          Pragma: 'no-cache',
+          Vary: 'Cookie, Authorization, Origin',
+        },
+      );
+    app.all('/v1/auth', unavailable);
+    app.all('/v1/auth/*', unavailable);
+    app.all('/v1/account', unavailable);
+    app.all('/v1/account/*', unavailable);
+  }
+
   const hasResolver = options.tenantSessionResolver !== undefined;
   const hasProjectService = options.projectService !== undefined;
   if (hasResolver !== hasProjectService) {
@@ -160,4 +194,27 @@ export function createApp(
   );
 
   return app;
+}
+
+function configuredIdentityDependencies(
+  options: CreateAppOptions,
+): IdentityRouteDependencies | undefined {
+  const configured = [
+    options.identityLifecycleService,
+    options.identityHttpSecurity,
+    options.identityRateLimiter,
+  ].filter((dependency) => dependency !== undefined).length;
+  if (configured === 0) {
+    return undefined;
+  }
+  if (configured !== 3) {
+    throw new TypeError(
+      'Identity routes require lifecycle, Origin/CSRF, and persistent rate-limit services',
+    );
+  }
+  return {
+    service: options.identityLifecycleService as IdentityLifecycleService,
+    security: options.identityHttpSecurity as IdentityHttpSecurityPort,
+    rateLimiter: options.identityRateLimiter as IdentityRateLimiter,
+  };
 }

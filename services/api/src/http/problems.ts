@@ -8,6 +8,7 @@ import type {
   ProblemDetails,
   VersionConflictProblem,
 } from '@zuocheng/contracts';
+import { IdentityLifecycleError } from '../auth/http/identity-lifecycle-service.js';
 import { TenantSessionError } from '../auth/tenant-session.js';
 import { ProjectServiceError } from '../projects/project-service.js';
 import { HttpPreconditionError } from './preconditions.js';
@@ -23,6 +24,7 @@ type ProblemStatus =
   | 415
   | 422
   | 428
+  | 429
   | 500
   | 503;
 
@@ -41,6 +43,10 @@ export function mapErrorToProblem(
 
   if (error instanceof HttpRequestError) {
     return requestProblem(error, requestId);
+  }
+
+  if (error instanceof IdentityLifecycleError) {
+    return identityLifecycleProblem(error, requestId);
   }
 
   if (error instanceof TenantSessionError) {
@@ -143,6 +149,163 @@ export function projectServiceUnavailableProblem(
     requestId,
     retryable: false,
   });
+}
+
+export function identityLifecycleUnavailableProblem(
+  requestId: string,
+): ProblemDetails {
+  return parseProblem({
+    type:
+      'https://zuocheng.app/problems/identity-lifecycle-not-configured',
+    title: 'Identity lifecycle not configured',
+    status: 503,
+    code: 'IDENTITY_LIFECYCLE_NOT_CONFIGURED',
+    message:
+      'Identity lifecycle, security, and persistent rate-limit services are not configured for this runtime',
+    requestId,
+    retryable: false,
+  });
+}
+
+function identityLifecycleProblem(
+  error: IdentityLifecycleError,
+  requestId: string,
+): ErrorProblem {
+  switch (error.code) {
+    case 'AUTH_REQUIRED':
+      return baseResult(401, requestId, {
+        code: error.code,
+        title: 'Authentication required',
+        message: 'Authentication is required',
+        retryable: false,
+      });
+    case 'INVALID_CREDENTIALS':
+      return baseResult(401, requestId, {
+        code: error.code,
+        title: 'Authentication failed',
+        message: 'The supplied credentials could not be verified',
+        retryable: false,
+      });
+    case 'RECENT_AUTH_REQUIRED':
+      return baseResult(403, requestId, {
+        code: error.code,
+        title: 'Recent authentication required',
+        message: 'Recent authentication is required for this operation',
+        retryable: false,
+      });
+    case 'ORIGIN_FORBIDDEN':
+      return baseResult(403, requestId, {
+        code: error.code,
+        title: 'Origin forbidden',
+        message: 'The request origin is not trusted',
+        retryable: false,
+      });
+    case 'CSRF_FAILED':
+      return baseResult(403, requestId, {
+        code: error.code,
+        title: 'CSRF verification failed',
+        message: 'The request could not be verified',
+        retryable: false,
+      });
+    case 'SECURITY_CONTROL_UNAVAILABLE':
+      return baseResult(503, requestId, {
+        code: error.code,
+        title: 'Security control unavailable',
+        message: 'Request security verification is temporarily unavailable',
+        retryable: true,
+      });
+    case 'RATE_LIMITED':
+      return baseResult(429, requestId, {
+        code: error.code,
+        title: 'Too many requests',
+        message: 'Too many requests were received',
+        retryable: true,
+      });
+    case 'RATE_LIMIT_UNAVAILABLE':
+      return baseResult(503, requestId, {
+        code: error.code,
+        title: 'Rate limit unavailable',
+        message: 'Request rate-limit verification is temporarily unavailable',
+        retryable: true,
+      });
+    case 'OAUTH_PROVIDER_UNAVAILABLE':
+      return baseResult(503, requestId, {
+        code: error.code,
+        title: 'OAuth provider unavailable',
+        message: 'The requested OAuth provider is not configured',
+        retryable: false,
+      });
+    case 'EMAIL_PROVIDER_UNAVAILABLE':
+      return baseResult(503, requestId, {
+        code: error.code,
+        title: 'Email provider unavailable',
+        message: 'Account email delivery is not configured',
+        retryable: false,
+      });
+    case 'IDENTITY_SERVICE_UNAVAILABLE':
+      return baseResult(503, requestId, {
+        code: error.code,
+        title: 'Identity service unavailable',
+        message: 'The identity service is temporarily unavailable',
+        retryable: true,
+      });
+    case 'VERIFICATION_TOKEN_INVALID':
+      return baseResult(400, requestId, {
+        code: error.code,
+        title: 'Verification request invalid',
+        message: 'The verification request is invalid or expired',
+        retryable: false,
+      });
+    case 'OAUTH_CALLBACK_INVALID':
+      return baseResult(400, requestId, {
+        code: error.code,
+        title: 'OAuth callback invalid',
+        message: 'The OAuth callback could not be verified',
+        retryable: false,
+      });
+    case 'PASSKEY_VERIFICATION_FAILED':
+      return baseResult(401, requestId, {
+        code: error.code,
+        title: 'Passkey verification failed',
+        message: 'The passkey assertion could not be verified',
+        retryable: false,
+      });
+    case 'RECOVERY_TOKEN_INVALID':
+      return baseResult(400, requestId, {
+        code: error.code,
+        title: 'Recovery request invalid',
+        message: 'The recovery request is invalid or expired',
+        retryable: false,
+      });
+    case 'RESOURCE_NOT_FOUND':
+      return baseResult(404, requestId, {
+        code: error.code,
+        title: 'Resource not found',
+        message: 'The requested identity resource does not exist',
+        retryable: false,
+      });
+    case 'IDEMPOTENCY_KEY_REUSED':
+      return baseResult(409, requestId, {
+        code: error.code,
+        title: 'Idempotency key conflict',
+        message: 'The idempotency key was already used for another request',
+        retryable: false,
+      });
+    case 'ACCOUNT_DELETION_NOT_CANCELLABLE':
+      return baseResult(409, requestId, {
+        code: error.code,
+        title: 'Account deletion cannot be cancelled',
+        message: 'The account deletion request cannot be cancelled',
+        retryable: false,
+      });
+    case 'ACCOUNT_DELETION_ALREADY_IRREVERSIBLE':
+      return baseResult(409, requestId, {
+        code: error.code,
+        title: 'Account deletion is irreversible',
+        message: 'The account deletion request has entered its irreversible phase',
+        retryable: false,
+      });
+  }
 }
 
 function preconditionProblem(
