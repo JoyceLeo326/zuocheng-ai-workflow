@@ -81,8 +81,7 @@ export function identityErrorPresentation(
       return {
         kind: 'provider-unavailable',
         title: '邮件服务暂不可用',
-        message:
-          '客户邮件服务当前不可用，未发送任何假邮件。请联系部署方后重试。',
+        message: '邮件服务暂时无法发送恢复邮件，请稍后重试。',
       };
     }
     if (
@@ -92,7 +91,7 @@ export function identityErrorPresentation(
       return {
         kind: 'provider-unavailable',
         title: '登录方式暂不可用',
-        message: '该登录服务尚未由部署方完成配置，请选择其他真实登录方式。',
+        message: '请稍后重试，或选择其他登录方式。',
       };
     }
     if (reason.code === 'VERIFICATION_TOKEN_INVALID') {
@@ -120,15 +119,14 @@ export function identityErrorPresentation(
       return {
         kind: 'permission',
         title: '没有执行权限',
-        message: '当前身份没有执行此操作的权限；系统没有绕过权限检查。',
+        message: '当前账号没有执行此操作的权限。',
       };
     }
     if (reason.status === 404) {
       return {
         kind: 'unavailable',
-        title: '身份服务未连接',
-        message:
-          '身份 API 尚未连接；系统没有进入本地假登录模式。请检查正式 API 部署配置。',
+        title: '账号服务暂不可用',
+        message: '当前工作不会受影响，请稍后重试。',
       };
     }
     if (reason.status === 409) {
@@ -142,7 +140,7 @@ export function identityErrorPresentation(
       return {
         kind: 'unavailable',
         title: '服务暂不可用',
-        message: '身份服务暂时不可用，系统没有回报假成功。请稍后重试。',
+        message: '账号服务暂时不可用，请稍后重试。',
       };
     }
     return {
@@ -169,7 +167,7 @@ export function identityErrorPresentation(
   return {
     kind: 'general',
     title: '操作未完成',
-    message: '操作未完成。请重试；若问题持续，请向部署方提供当前时间。',
+    message: '请重试；若问题持续，请记录当前时间并联系支持。',
   };
 }
 
@@ -452,7 +450,7 @@ export function IdentityPortal({
           onRegister={(input) => {
             void perform('register', async () => {
               await client.registerPassword(input);
-              setNotice('真实验证邮件已提交发送。请从邮件链接完成验证。');
+              setNotice('验证邮件已发送，请从邮件链接完成验证。');
             });
           }}
         />
@@ -498,7 +496,7 @@ export function IdentityPortal({
         onExport={() => {
           void perform('export', async () => {
             setAccountExport(await client.requestAccountExport());
-            setNotice('真实导出任务已创建；完成后将显示哈希与下载入口。');
+            setNotice('导出任务已创建；完成后将显示哈希与下载入口。');
           });
         }}
         onLogout={() => {
@@ -534,7 +532,7 @@ export function IdentityPortal({
               recentAuthToken: recent.recentAuthToken,
             });
             setAccountDeletion(result.deletion);
-            setNotice('确认邮件已真实发送；请从邮件链接继续或在截止前取消。');
+            setNotice('确认邮件已发送；请从邮件链接继续或在截止前取消。');
           });
         }}
         onRevokeAll={() => {

@@ -23,10 +23,7 @@ import type {
   ManagedProject,
   ProjectManagerCallbacks,
 } from './project-manager.js';
-import type {
-  WorkbenchProjectFormInput,
-  WorkbenchProjectLifecycleService,
-} from './workbench-service.js';
+import type { WorkbenchProjectLifecycleService } from './workbench-service.js';
 
 export const PROJECT_PACKAGE_FORMAT =
   'zuocheng-project-package' as const;
@@ -73,12 +70,8 @@ export class ProjectPackageError extends Error {
 export interface ProjectManagerControllerOptions {
   service: WorkbenchProjectLifecycleService;
   openProject(project: Project): Promise<void>;
-  createProjectInput?(
-    title: string,
-    now: Date,
-  ): WorkbenchProjectFormInput;
+  prepareNewProject(title: string): Promise<void>;
   cryptoProvider?: Crypto;
-  now?: () => Date;
 }
 
 interface PackageEntry {
@@ -117,22 +110,16 @@ export class ProjectManagerController
 {
   readonly #service: WorkbenchProjectLifecycleService;
   readonly #openProject: (project: Project) => Promise<void>;
-  readonly #createProjectInput: (
-    title: string,
-    now: Date,
-  ) => WorkbenchProjectFormInput;
+  readonly #prepareNewProject: (title: string) => Promise<void>;
   readonly #cryptoProvider: Crypto | undefined;
-  readonly #now: () => Date;
   #projectsById = new Map<string, Project>();
   #managedProjects: readonly ManagedProject[] = Object.freeze([]);
 
   constructor(options: ProjectManagerControllerOptions) {
     this.#service = options.service;
     this.#openProject = options.openProject;
-    this.#createProjectInput =
-      options.createProjectInput ?? defaultProjectInput;
+    this.#prepareNewProject = options.prepareNewProject;
     this.#cryptoProvider = options.cryptoProvider ?? globalThis.crypto;
-    this.#now = options.now ?? (() => new Date());
   }
 
   get projects(): readonly ManagedProject[] {
@@ -165,11 +152,7 @@ export class ProjectManagerController
     if (normalizedTitle.length === 0) {
       throw new Error('Project title must not be empty.');
     }
-    const now = this.#timestamp();
-    await this.#service.createProject(
-      this.#createProjectInput(normalizedTitle, now),
-    );
-    await this.refresh();
+    await this.#prepareNewProject(normalizedTitle);
   };
 
   readonly onDuplicate: ProjectManagerCallbacks['onDuplicate'] = async ({
@@ -254,14 +237,6 @@ export class ProjectManagerController
       throw new ProjectNotFoundError(projectId);
     }
     return project;
-  }
-
-  #timestamp(): Date {
-    const now = this.#now();
-    if (!(now instanceof Date) || !Number.isFinite(now.valueOf())) {
-      throw new Error('Project manager clock is invalid.');
-    }
-    return new Date(now.valueOf());
   }
 }
 
@@ -457,32 +432,6 @@ export async function deserializeProjectPackage(
     sourceBlobs,
     sourceChunks: sourceChunks as ProjectExportBundle['sourceChunks'],
     editHistory: editHistory as ProjectExportBundle['editHistory'],
-  };
-}
-
-function defaultProjectInput(
-  title: string,
-  now: Date,
-): WorkbenchProjectFormInput {
-  const deadline = new Date(now.valueOf() + 30 * 24 * 60 * 60 * 1_000);
-  return {
-    projectTitle: title,
-    taskName: title,
-    audience: 'To be specified',
-    deadline: deadline.toISOString(),
-    scope: '1 page',
-    durationMinutes: '1',
-    outputFormat: 'presentation',
-    tone: 'Clear',
-    rubric: [
-      {
-        title: 'Completeness',
-        description: 'Complete the stated project goal.',
-        weightPercent: 100,
-      },
-    ],
-    requiredContent: '',
-    forbiddenContent: '',
   };
 }
 

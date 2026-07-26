@@ -129,6 +129,7 @@ describe('AISettingsPanel', () => {
         apiKey: 'sk-draft-only',
         persistence: 'session',
       },
+      new AbortController().signal,
       (next) => {
         feedback.push(next);
       },
@@ -147,13 +148,16 @@ describe('AISettingsPanel', () => {
     gate.resolve();
     await operation;
 
-    expect(onTestConnection).toHaveBeenCalledWith({
-      providerId: 'personal-openai-compatible',
-      displayName: '我的模型',
-      endpoint: 'https://models.example.test/v1',
-      model: 'example-chat',
-      apiKey: 'sk-draft-only',
-    });
+    expect(onTestConnection).toHaveBeenCalledWith(
+      {
+        providerId: 'personal-openai-compatible',
+        displayName: '我的模型',
+        endpoint: 'https://models.example.test/v1',
+        model: 'example-chat',
+        apiKey: 'sk-draft-only',
+      },
+      expect.any(AbortSignal),
+    );
     expect(feedback.at(-1)).toEqual({
       kind: 'success',
       message: '连接成功，可以使用这个模型。',
@@ -185,6 +189,7 @@ describe('AISettingsPanel', () => {
         apiKey: '',
         persistence: 'session',
       },
+      new AbortController().signal,
       (next) => {
         feedback.push(next);
       },
@@ -194,6 +199,7 @@ describe('AISettingsPanel', () => {
 
     expect(onTestConnection).toHaveBeenCalledWith(
       expect.objectContaining({ apiKey: 'sk-saved' }),
+      expect.any(AbortSignal),
     );
     expect(feedback.at(-1)).toEqual({
       kind: 'error',
@@ -300,6 +306,7 @@ describe('AISettingsPanel', () => {
         apiKey: 'sk-draft',
         persistence: 'session',
       },
+      new AbortController().signal,
       (next) => {
         feedback.push(next);
       },
@@ -309,6 +316,59 @@ describe('AISettingsPanel', () => {
     expect(feedback.at(-1)?.kind).toBe('error');
     expect(JSON.stringify(feedback)).not.toContain('api_key');
     expect(JSON.stringify(feedback)).not.toContain('sk-draft');
+  });
+
+  it('passes cancellation to the callback and reports it without a provider error', async () => {
+    const controller = new AbortController();
+    const feedback: AISettingsFeedback[] = [];
+    const onTestConnection = vi.fn(
+      async (_input, signal: AbortSignal) =>
+        new Promise<void>((_resolve, reject) => {
+          signal.addEventListener(
+            'abort',
+            () => {
+              reject(new Error('provider echoed a secret while aborting'));
+            },
+            { once: true },
+          );
+        }),
+    );
+    const actions = createAISettingsActions({
+      providerId: 'personal-openai-compatible',
+      displayName: '我的模型',
+      credentials: credentialStore(),
+      onSaveConfig: vi.fn(),
+      onDeleteConfig: vi.fn(),
+      onTestConnection,
+    });
+    const operation = actions.testConnection(
+      {
+        endpoint: 'https://models.example.test/v1',
+        model: 'example-chat',
+        apiKey: 'sk-cancelled',
+        persistence: 'session',
+      },
+      controller.signal,
+      (next) => {
+        feedback.push(next);
+      },
+    );
+
+    await vi.waitFor(() => {
+      expect(onTestConnection).toHaveBeenCalledWith(
+        expect.objectContaining({ apiKey: 'sk-cancelled' }),
+        controller.signal,
+      );
+    });
+    controller.abort();
+    await operation;
+
+    expect(feedback.at(-1)).toEqual({
+      kind: 'cancelled',
+      message: '连接测试已取消。',
+    });
+    expect(JSON.stringify(feedback)).not.toContain('secret');
+    expect(JSON.stringify(feedback)).not.toContain('sk-cancelled');
   });
 
   it('ships visible focus, narrow-screen, reduced-motion and forced-color rules', () => {

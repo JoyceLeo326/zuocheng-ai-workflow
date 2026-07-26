@@ -163,7 +163,7 @@ describe('student identity views', () => {
     expect(html).toContain('添加 Passkey');
     expect(html).toContain('撤销其他会话');
     expect(html).toContain('撤销全部会话');
-    expect(html).toContain('请求真实数据导出');
+    expect(html).toContain('创建数据导出');
     expect(html).toContain('删除账号');
     expect(html).toContain('需要重新验证');
     expect(html).toContain('aria-describedby="deletion-impact"');

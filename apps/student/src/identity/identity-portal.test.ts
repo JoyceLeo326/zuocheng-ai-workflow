@@ -58,7 +58,7 @@ describe('identity portal link and error boundary', () => {
           undefined,
         ),
       ),
-    ).toContain('身份 API');
+    ).toContain('当前工作不会受影响');
     expect(identityErrorMessage(error)).not.toContain('Internal detail');
   });
 

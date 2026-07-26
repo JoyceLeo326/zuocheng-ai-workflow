@@ -262,6 +262,11 @@
   border-color: rgb(255 145 136 / 55%);
 }
 
+.ai-settings-panel__button--cancel {
+  color: var(--ai-settings-focus);
+  border-color: var(--ai-settings-focus);
+}
+
 .ai-settings-panel__button:disabled,
 .ai-settings-panel__key-toggle:disabled {
   cursor: not-allowed;
@@ -314,6 +319,10 @@
 
 .ai-settings-panel__feedback-message--error {
   color: var(--ai-settings-danger);
+}
+
+.ai-settings-panel__feedback-message--cancelled {
+  color: var(--ai-settings-muted);
 }
 
 .ai-settings-panel__feedback-message--pending > span {

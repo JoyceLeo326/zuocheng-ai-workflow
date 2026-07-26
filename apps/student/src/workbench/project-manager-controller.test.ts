@@ -172,6 +172,9 @@ function createController(
   openProject = vi.fn<(project: Project) => Promise<void>>(
     async () => undefined,
   ),
+  prepareNewProject = vi.fn<(title: string) => Promise<void>>(
+    async () => undefined,
+  ),
 ) {
   const service = createWorkbenchService({
     store,
@@ -182,10 +185,11 @@ function createController(
     controller: createProjectManagerController({
       service,
       openProject,
+      prepareNewProject,
       cryptoProvider: globalThis.crypto,
-      now: () => new Date(NOW),
     }),
     openProject,
+    prepareNewProject,
     service,
   };
 }
@@ -209,7 +213,8 @@ describe('ProjectManagerController', () => {
   it('refreshes, opens and persists every manager lifecycle callback', async () => {
     const store = new MemoryProjectStore();
     await store.createProject(project());
-    const { controller, openProject } = createController(store);
+    const { controller, openProject, prepareNewProject } =
+      createController(store);
 
     await expect(controller.refresh()).resolves.toEqual([
       mapManagedProject(project()),
@@ -255,14 +260,12 @@ describe('ProjectManagerController', () => {
     await expect(store.getProject(PROJECT_ID)).resolves.toBeNull();
 
     await controller.onCreate({ title: 'New real project' });
-    expect(await store.listProjects()).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          title: 'New real project',
-          status: 'active',
-        }),
-      ]),
-    );
+    expect(prepareNewProject).toHaveBeenCalledWith('New real project');
+    expect(
+      (await store.listProjects()).some(
+        (candidate) => candidate.title === 'New real project',
+      ),
+    ).toBe(false);
     expect(controller.projects.every(Object.isFrozen)).toBe(true);
   });
 
