@@ -564,9 +564,10 @@ export function EvidenceStage({
                 <select
                   id="evidence-kind"
                   onChange={(event) => {
+                    const kind = event.currentTarget.value as EvidenceKind;
                     setFormState((current) => ({
                       ...current,
-                      kind: event.currentTarget.value as EvidenceKind,
+                      kind,
                     }));
                   }}
                   value={formState.kind}
@@ -608,9 +609,10 @@ export function EvidenceStage({
                   id="evidence-note"
                   maxLength={2_000}
                   onChange={(event) => {
+                    const note = event.currentTarget.value;
                     setFormState((current) => ({
                       ...current,
-                      note: event.currentTarget.value,
+                      note,
                     }));
                   }}
                   placeholder="说明这条证据用于支持或限制什么结论"
@@ -625,9 +627,10 @@ export function EvidenceStage({
                   id="evidence-citation"
                   maxLength={500}
                   onChange={(event) => {
+                    const citation = event.currentTarget.value;
                     setFormState((current) => ({
                       ...current,
-                      citation: event.currentTarget.value,
+                      citation,
                     }));
                   }}
                   placeholder="文件名，第 7 页"
@@ -640,9 +643,10 @@ export function EvidenceStage({
                 <input
                   checked={formState.userConfirmed}
                   onChange={(event) => {
+                    const userConfirmed = event.currentTarget.checked;
                     setFormState((current) => ({
                       ...current,
-                      userConfirmed: event.currentTarget.checked,
+                      userConfirmed,
                     }));
                   }}
                   type="checkbox"
