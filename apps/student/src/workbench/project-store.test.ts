@@ -206,6 +206,32 @@ describe('MemoryProjectStore contract', () => {
     );
   });
 
+  it('deletes the project and every project-owned local record', async () => {
+    const database = createMemoryProjectDatabase();
+    const store = new MemoryProjectStore({ database });
+    await store.createProject(project());
+    await store.putSourceBlob(PROJECT_ID, FILE_ID, new Blob(['hello']));
+    await store.replaceSourceChunks(
+      PROJECT_ID,
+      FILE_ID,
+      [chunk()],
+      1,
+      NEXT_UPDATED_AT,
+    );
+    await store.appendEdit(edit());
+
+    await expect(store.deleteProject(PROJECT_ID)).resolves.toBeUndefined();
+    await expect(store.getProject(PROJECT_ID)).resolves.toBeNull();
+    await expect(store.listProjects()).resolves.toEqual([]);
+    expect(database.sourceBlobs.size).toBe(0);
+    expect(database.sourceChunks.size).toBe(0);
+    expect(database.edits.size).toBe(0);
+    await expect(store.deleteProject(PROJECT_ID)).rejects.toMatchObject({
+      name: 'ProjectNotFoundError',
+      projectId: PROJECT_ID,
+    });
+  });
+
   it('rejects blobs and chunks that are not owned by the project source file', async () => {
     const store = new MemoryProjectStore();
     await store.createProject(project());

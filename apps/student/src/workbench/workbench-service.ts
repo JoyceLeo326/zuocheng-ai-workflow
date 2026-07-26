@@ -128,6 +128,7 @@ export type SourceIngestionResult =
 export interface WorkbenchService {
   listProjects(): Promise<Project[]>;
   createProject(input: WorkbenchProjectFormInput): Promise<Project>;
+  deleteProject(projectId: string): Promise<void>;
   createEvidence(
     projectId: string,
     input: WorkbenchEvidenceInput,
@@ -272,6 +273,10 @@ class DefaultWorkbenchService implements WorkbenchService {
       verificationResults: [],
     });
     return this.store.createProject(project);
+  }
+
+  async deleteProject(projectId: string): Promise<void> {
+    await this.store.deleteProject(projectId);
   }
 
   async createEvidence(

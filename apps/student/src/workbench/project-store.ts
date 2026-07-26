@@ -48,6 +48,7 @@ export interface ProjectStore {
   createProject(project: Project): Promise<Project>;
   getProject(projectId: EntityId): Promise<Project | null>;
   listProjects(): Promise<Project[]>;
+  deleteProject(projectId: EntityId): Promise<void>;
   saveProject(project: Project, expectedVersion: number): Promise<Project>;
   putSourceBlob(
     projectId: EntityId,
@@ -617,6 +618,28 @@ export class MemoryProjectStore implements ProjectStore {
       .map((project) => clone(project));
   }
 
+  async deleteProject(projectId: EntityId): Promise<void> {
+    if (!this.#database.projects.has(projectId)) {
+      throw new ProjectNotFoundError(projectId);
+    }
+    this.#database.projects.delete(projectId);
+    for (const key of this.#database.sourceBlobs.keys()) {
+      if (key.startsWith(`${projectId}:`)) {
+        this.#database.sourceBlobs.delete(key);
+      }
+    }
+    for (const [chunkId, chunk] of this.#database.sourceChunks) {
+      if (chunk.projectId === projectId) {
+        this.#database.sourceChunks.delete(chunkId);
+      }
+    }
+    for (const [editId, edit] of this.#database.edits) {
+      if (edit.projectId === projectId) {
+        this.#database.edits.delete(editId);
+      }
+    }
+  }
+
   async saveProject(
     input: Project,
     expectedVersion: number,
@@ -998,6 +1021,35 @@ export class IndexedDbProjectStore implements ProjectStore {
     return values
       .map((project) => parseProject(project))
       .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+  }
+
+  async deleteProject(projectId: EntityId): Promise<void> {
+    const database = await this.#database();
+    const transaction = database.transaction(
+      [PROJECTS_STORE, BLOBS_STORE, CHUNKS_STORE, EDITS_STORE],
+      'readwrite',
+    );
+    const projects = transaction.objectStore(PROJECTS_STORE);
+    const current = await requestResult(projects.get(projectId));
+    if (current === undefined) {
+      transaction.abort();
+      throw new ProjectNotFoundError(projectId);
+    }
+    projects.delete(projectId);
+    for (const storeName of [
+      BLOBS_STORE,
+      CHUNKS_STORE,
+      EDITS_STORE,
+    ] as const) {
+      const store = transaction.objectStore(storeName);
+      const keys = await requestResult(
+        store.index(PROJECT_ID_INDEX).getAllKeys(projectId),
+      );
+      for (const key of keys) {
+        store.delete(key);
+      }
+    }
+    await transactionDone(transaction);
   }
 
   async saveProject(
