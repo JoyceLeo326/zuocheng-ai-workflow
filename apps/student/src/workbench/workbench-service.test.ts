@@ -192,6 +192,23 @@ describe('WorkbenchService first-stage orchestration', () => {
     await expect(service.listProjects()).resolves.toEqual([created]);
   });
 
+  it('deletes a local project through the persistent store boundary', async () => {
+    const store = new MemoryProjectStore();
+    const service = createWorkbenchService({
+      store,
+      idFactory: sequentialIds(),
+      now: () => new Date('2026-07-27T01:00:00.000Z'),
+    });
+    const created = await service.createProject(form());
+
+    await expect(service.deleteProject(created.id)).resolves.toBeUndefined();
+    await expect(service.listProjects()).resolves.toEqual([]);
+    await expect(service.deleteProject(created.id)).rejects.toMatchObject({
+      name: 'ProjectNotFoundError',
+      projectId: created.id,
+    });
+  });
+
   it('parses word targets and rejects ambiguous targets or rubric totals before persistence', async () => {
     const store = new MemoryProjectStore();
     const service = createWorkbenchService({
