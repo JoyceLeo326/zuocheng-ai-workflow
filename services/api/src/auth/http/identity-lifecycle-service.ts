@@ -122,11 +122,16 @@ export type IdentityLifecycleErrorCode =
 
 export class IdentityLifecycleError extends Error {
   readonly code: IdentityLifecycleErrorCode;
+  readonly retryAfterSeconds: number | undefined;
 
-  constructor(code: IdentityLifecycleErrorCode) {
+  constructor(
+    code: IdentityLifecycleErrorCode,
+    options: Readonly<{ retryAfterSeconds?: number }> = {},
+  ) {
     super(code);
     this.name = 'IdentityLifecycleError';
     this.code = code;
+    this.retryAfterSeconds = options.retryAfterSeconds;
   }
 }
 
@@ -165,20 +170,50 @@ export type IdentitySecurityInput = Readonly<{
  * Implementations must inspect headers only and must not consume the body.
  */
 export interface IdentityHttpSecurityPort {
+  /**
+   * Exact browser origins allowed to receive credentialed identity responses.
+   * Omitting the allowlist makes the HTTP surface same-origin only. Wildcards,
+   * paths, credentials, localhost and non-HTTPS origins are rejected at app
+   * assembly.
+   */
+  readonly corsAllowedOrigins?: readonly string[];
+  /**
+   * The exact customer Entra tenant accepted in Microsoft authorization URLs.
+   * Omitting it disables Microsoft OAuth start at the route boundary.
+   */
+  readonly oauthAuthorizationPolicy?: Readonly<{
+    microsoftTenantId: string;
+  }>;
   enforce(input: IdentitySecurityInput): Promise<void>;
 }
 
 export type IdentityRateLimitDecision =
   | Readonly<{ allowed: true }>
-  | Readonly<{ allowed: false }>;
+  | Readonly<{ allowed: false; retryAfterSeconds: number }>;
+
+export type IdentityRateLimitInput =
+  | Readonly<{
+      operation: IdentityRateLimitOperation;
+      request: Request;
+      stage: 'network';
+    }>
+  | Readonly<{
+      operation: IdentityRateLimitOperation;
+      request: Request;
+      stage: 'principal';
+      principal: IdentityPrincipal;
+    }>;
 
 /**
- * A persistent, shared rate-limit port. In-memory process-local counters are
- * not production implementations of this contract. Implementations must not
- * consume the request body.
+ * A persistent, shared two-stage rate-limit port. `network` is consumed before
+ * authentication and must key on customer-approved network/IP signals.
+ * `principal` is consumed only after authentication and must key on the
+ * supplied user/session principal. In-memory process-local counters are not
+ * production implementations of this contract. Implementations must inspect
+ * metadata only and must never consume the request body.
  */
 export interface IdentityRateLimiter {
-  consume(input: IdentitySecurityInput): Promise<IdentityRateLimitDecision>;
+  consume(input: IdentityRateLimitInput): Promise<IdentityRateLimitDecision>;
 }
 
 export interface IdentityLifecycleService {
