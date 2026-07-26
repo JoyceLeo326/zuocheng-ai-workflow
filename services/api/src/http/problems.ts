@@ -31,6 +31,7 @@ type ProblemStatus =
 export type ErrorProblem = {
   status: ProblemStatus;
   body: ProblemDetails | VersionConflictProblem;
+  headers?: Readonly<Record<string, string>>;
 };
 
 export function mapErrorToProblem(
@@ -215,12 +216,30 @@ function identityLifecycleProblem(
         retryable: true,
       });
     case 'RATE_LIMITED':
-      return baseResult(429, requestId, {
-        code: error.code,
-        title: 'Too many requests',
-        message: 'Too many requests were received',
-        retryable: true,
-      });
+      if (
+        !Number.isSafeInteger(error.retryAfterSeconds) ||
+        (error.retryAfterSeconds as number) < 1 ||
+        (error.retryAfterSeconds as number) > 86_400
+      ) {
+        return baseResult(503, requestId, {
+          code: 'RATE_LIMIT_UNAVAILABLE',
+          title: 'Rate limit unavailable',
+          message:
+            'Request rate-limit verification is temporarily unavailable',
+          retryable: true,
+        });
+      }
+      return {
+        ...baseResult(429, requestId, {
+          code: error.code,
+          title: 'Too many requests',
+          message: 'Too many requests were received',
+          retryable: true,
+        }),
+        headers: {
+          'Retry-After': String(error.retryAfterSeconds),
+        },
+      };
     case 'RATE_LIMIT_UNAVAILABLE':
       return baseResult(503, requestId, {
         code: error.code,

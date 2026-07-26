@@ -102,9 +102,13 @@ function createService(
       sessionToken: 'opaque.passkey-session_1',
       session,
     })),
-    startOAuth: vi.fn(async () => ({
+    startOAuth: vi.fn(async (input) => ({
       authorizationUrl:
-        'https://accounts.example.test/authorize?state=opaque-state',
+        input.provider === 'google'
+          ? 'https://accounts.google.com/o/oauth2/v2/auth?state=opaque-state'
+          : input.provider === 'github'
+            ? 'https://github.com/login/oauth/authorize?state=opaque-state'
+            : 'https://login.microsoftonline.com/3f2504e0-4f89-41d3-9a0c-0305e82c3301/oauth2/v2.0/authorize?state=opaque-state',
     })),
     completeOAuth: vi.fn(async () => ({
       sessionToken: 'opaque.oauth-session_1',
@@ -159,6 +163,10 @@ function createSecurity(
   implementation?: IdentityHttpSecurityPort['enforce'],
 ): IdentityHttpSecurityPort & { enforce: ReturnType<typeof vi.fn> } {
   return {
+    corsAllowedOrigins: ['https://zuocheng.example'],
+    oauthAuthorizationPolicy: {
+      microsoftTenantId: '3f2504e0-4f89-41d3-9a0c-0305e82c3301',
+    },
     enforce: vi.fn(implementation ?? (async () => undefined)),
   };
 }
@@ -469,17 +477,19 @@ describe('identity lifecycle HTTP routes', () => {
     });
     expect(service.authenticate).toHaveBeenCalledOnce();
     expect(security.enforce).toHaveBeenCalledOnce();
-    expect(rateLimiter.consume).toHaveBeenCalledOnce();
+    expect(rateLimiter.consume).toHaveBeenCalledTimes(2);
   });
 
-  it('enforces authentication, Origin/CSRF, idempotency and persistent rate limiting before body parsing or business handling', async () => {
+  it('enforces cheap headers, Origin/CSRF, network limiting, authentication and principal limiting before one body read', async () => {
     const events: string[] = [];
     const service = createService(events);
-    const security = createSecurity(async () => {
+    const security = createSecurity(async ({ request }) => {
+      expect(request.bodyUsed).toBe(false);
       events.push('security');
     });
-    const rateLimiter = createRateLimiter(async () => {
-      events.push('rate-limit');
+    const rateLimiter = createRateLimiter(async ({ request, stage }) => {
+      expect(request.bodyUsed).toBe(false);
+      events.push(`rate-limit:${stage}`);
       return { allowed: true };
     });
     const app = testApp(service, security, rateLimiter);
@@ -493,11 +503,28 @@ describe('identity lifecycle HTTP routes', () => {
     });
 
     expect(response.status).toBe(202);
-    expect(events.slice(0, 3)).toEqual([
-      'authenticate',
+    expect(events.slice(0, 4)).toEqual([
       'security',
-      'rate-limit',
+      'rate-limit:network',
+      'authenticate',
+      'rate-limit:principal',
     ]);
+    expect(security.enforce).toHaveBeenCalledWith(
+      expect.not.objectContaining({ principal }),
+    );
+    expect(rateLimiter.consume).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        stage: 'network',
+      }),
+    );
+    expect(rateLimiter.consume).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        stage: 'principal',
+        principal,
+      }),
+    );
     expect(service.requestAccountDeletion).toHaveBeenCalledOnce();
 
     const noKey = await app.request('/v1/auth/password/login', {
@@ -513,6 +540,58 @@ describe('identity lifecycle HTTP routes', () => {
       code: 'IDEMPOTENCY_KEY_REQUIRED',
     });
     expect(service.loginPassword).not.toHaveBeenCalled();
+  });
+
+  it('rejects cheap header failures before security, rate limiting, authentication or body reads', async () => {
+    const service = createService();
+    const security = createSecurity();
+    const rateLimiter = createRateLimiter();
+    const response = await testApp(
+      service,
+      security,
+      rateLimiter,
+    ).request('/v1/account/deletion', {
+      method: 'POST',
+      headers: {
+        ...protectedMutationHeaders,
+        'Content-Type': 'text/plain',
+      },
+      body: JSON.stringify({
+        recentAuthToken: 'opaque-recent-auth-proof',
+      }),
+    });
+
+    expect(response.status).toBe(415);
+    expect(security.enforce).not.toHaveBeenCalled();
+    expect(rateLimiter.consume).not.toHaveBeenCalled();
+    expect(service.authenticate).not.toHaveBeenCalled();
+    expect(service.requestAccountDeletion).not.toHaveBeenCalled();
+  });
+
+  it('stops protected mutations at the anonymous network limit before authentication', async () => {
+    const service = createService();
+    const rateLimiter = createRateLimiter(async ({ stage }) =>
+      stage === 'network'
+        ? { allowed: false, retryAfterSeconds: 17 }
+        : { allowed: true },
+    );
+    const response = await testApp(
+      service,
+      createSecurity(),
+      rateLimiter,
+    ).request('/v1/account/deletion', {
+      method: 'POST',
+      headers: protectedMutationHeaders,
+      body: JSON.stringify({
+        recentAuthToken: 'opaque-recent-auth-proof',
+      }),
+    });
+
+    expect(response.status).toBe(429);
+    expect(response.headers.get('retry-after')).toBe('17');
+    expect(rateLimiter.consume).toHaveBeenCalledOnce();
+    expect(service.authenticate).not.toHaveBeenCalled();
+    expect(service.requestAccountDeletion).not.toHaveBeenCalled();
   });
 
   it('fails closed when Origin/CSRF or rate-limit enforcement is unavailable or denies the request', async () => {
@@ -573,7 +652,10 @@ describe('identity lifecycle HTTP routes', () => {
     const rateLimited = await testApp(
       service,
       createSecurity(),
-      createRateLimiter(async () => ({ allowed: false })),
+      createRateLimiter(async () => ({
+        allowed: false,
+        retryAfterSeconds: 29,
+      })),
     ).request('/v1/auth/password/login', {
       method: 'POST',
       headers: publicMutationHeaders,
@@ -583,12 +665,52 @@ describe('identity lifecycle HTTP routes', () => {
       }),
     });
     expect(rateLimited.status).toBe(429);
+    expect(rateLimited.headers.get('retry-after')).toBe('29');
     await expect(rateLimited.json()).resolves.toMatchObject({
       code: 'RATE_LIMITED',
       retryable: true,
     });
     expect(service.loginPassword).not.toHaveBeenCalled();
   });
+
+  it.each([
+    { reason: 'missing retry delay', decision: { allowed: false } },
+    {
+      reason: 'fractional retry delay',
+      decision: { allowed: false, retryAfterSeconds: 1.5 },
+    },
+    {
+      reason: 'negative retry delay',
+      decision: { allowed: false, retryAfterSeconds: -1 },
+    },
+    {
+      reason: 'unexpected storage result',
+      decision: { allowed: true, retryAfterSeconds: 10 },
+    },
+  ])(
+    'fails closed for a malformed persistent rate-limit decision: $reason',
+    async ({ decision }) => {
+      const service = createService();
+      const response = await testApp(
+        service,
+        createSecurity(),
+        createRateLimiter(async () => decision as never),
+      ).request('/v1/auth/password/login', {
+        method: 'POST',
+        headers: publicMutationHeaders,
+        body: JSON.stringify({
+          identifier: 'person@example.test',
+          password: 'correct horse battery staple',
+        }),
+      });
+
+      expect(response.status).toBe(503);
+      await expect(response.json()).resolves.toMatchObject({
+        code: 'RATE_LIMIT_UNAVAILABLE',
+      });
+      expect(service.loginPassword).not.toHaveBeenCalled();
+    },
+  );
 
   it('rejects unsupported, oversized and invalid JSON before the service sees credentials', async () => {
     const service = createService();
@@ -658,6 +780,144 @@ describe('identity lifecycle HTTP routes', () => {
       code: 'EMAIL_PROVIDER_UNAVAILABLE',
       retryable: false,
     });
+  });
+
+  it.each([
+    {
+      provider: 'google',
+      authorizationUrl:
+        'https://evil.example/o/oauth2/v2/auth?state=opaque-state',
+    },
+    {
+      provider: 'google',
+      authorizationUrl:
+        'https://accounts.google.com.evil.example/o/oauth2/v2/auth?state=opaque-state',
+    },
+    {
+      provider: 'github',
+      authorizationUrl:
+        'https://github.com/login/oauth/authorize/extra?state=opaque-state',
+    },
+    {
+      provider: 'microsoft',
+      authorizationUrl:
+        'https://login.microsoftonline.com/common/oauth2/v2.0/authorize?state=opaque-state',
+    },
+    {
+      provider: 'microsoft',
+      authorizationUrl:
+        'https://login.microsoftonline.com/7bb9e5c2-b0c8-4f1e-a278-2d8f64a73c91/oauth2/v2.0/authorize?state=opaque-state',
+    },
+    {
+      provider: 'microsoft',
+      authorizationUrl:
+        'https://login.microsoftonline.com/3f2504e0-4f89-41d3-9a0c-0305e82c3301/oauth2/authorize?state=opaque-state',
+    },
+  ] as const)(
+    'rejects an untrusted $provider authorization endpoint',
+    async ({ provider, authorizationUrl }) => {
+      const service = createService();
+      vi.mocked(service.startOAuth).mockResolvedValue({ authorizationUrl });
+      const response = await testApp(service).request(
+        `/v1/auth/oauth/${provider}/start`,
+        {
+          method: 'POST',
+          headers: publicMutationHeaders,
+          body: JSON.stringify({ returnTo: '/account' }),
+        },
+      );
+
+      expect(response.status).toBe(503);
+      await expect(response.json()).resolves.toMatchObject({
+        code: 'IDENTITY_SERVICE_UNAVAILABLE',
+      });
+    },
+  );
+
+  it('fails closed when the exact Microsoft tenant policy is not composed', async () => {
+    const response = await testApp(createService(), {
+      corsAllowedOrigins: ['https://zuocheng.example'],
+      enforce: vi.fn(async () => undefined),
+    }).request('/v1/auth/oauth/microsoft/start', {
+      method: 'POST',
+      headers: publicMutationHeaders,
+      body: JSON.stringify({ returnTo: '/account' }),
+    });
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toMatchObject({
+      code: 'IDENTITY_SERVICE_UNAVAILABLE',
+    });
+  });
+
+  it('serves strict credentialed CORS only for the explicit identity allowlist', async () => {
+    const app = testApp();
+    const preflight = await app.request('/v1/auth/password/login', {
+      method: 'OPTIONS',
+      headers: {
+        Origin: 'https://zuocheng.example',
+        'Access-Control-Request-Method': 'POST',
+        'Access-Control-Request-Headers':
+          'content-type, idempotency-key, x-csrf-token',
+      },
+    });
+
+    expect(preflight.status).toBe(204);
+    expect(preflight.headers.get('access-control-allow-origin')).toBe(
+      'https://zuocheng.example',
+    );
+    expect(preflight.headers.get('access-control-allow-credentials')).toBe(
+      'true',
+    );
+    expect(preflight.headers.get('access-control-allow-methods')).toBe(
+      'POST',
+    );
+    expect(preflight.headers.get('access-control-allow-headers')).toBe(
+      'content-type, idempotency-key, x-csrf-token',
+    );
+    expect(preflight.headers.get('vary')).toContain(
+      'Access-Control-Request-Headers',
+    );
+
+    const actual = await app.request('/v1/auth/session/current', {
+      headers: {
+        Cookie: protectedMutationHeaders.Cookie,
+        Origin: 'https://zuocheng.example',
+      },
+    });
+    expect(actual.status).toBe(200);
+    expect(actual.headers.get('access-control-allow-origin')).toBe(
+      'https://zuocheng.example',
+    );
+    expect(actual.headers.get('access-control-allow-credentials')).toBe(
+      'true',
+    );
+    expect(actual.headers.get('access-control-expose-headers')).toBe(
+      'Retry-After, X-Request-Id',
+    );
+
+    for (const headers of [
+      {
+        Origin: 'https://attacker.example',
+        'Access-Control-Request-Method': 'POST',
+      },
+      {
+        Origin: 'https://zuocheng.example',
+        'Access-Control-Request-Method': 'PUT',
+      },
+      {
+        Origin: 'https://zuocheng.example',
+        'Access-Control-Request-Method': 'POST',
+        'Access-Control-Request-Headers': 'content-type, x-admin',
+      },
+    ]) {
+      const denied = await app.request('/v1/auth/password/login', {
+        method: 'OPTIONS',
+        headers,
+      });
+      expect(denied.status).toBe(403);
+      expect(denied.headers.get('access-control-allow-origin')).toBeNull();
+    }
   });
 
   it('keeps recovery acceptance enumeration-safe and identity failures opaque', async () => {

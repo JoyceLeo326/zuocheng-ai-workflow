@@ -8,8 +8,16 @@ import {
 } from './better-auth-runtime.js';
 
 const USER_ID = '01890f3e-b6e8-7a11-8d98-5b82e8cc46a2';
-const CURRENT_SECRET = 'c'.repeat(48);
-const PREVIOUS_SECRET = 'p'.repeat(48);
+const CURRENT_SECRET = 'J7!vP3#qL9@xR5$kN2%tW8^mC4&zH6*s';
+const PREVIOUS_SECRET = 'D4$rT8!nY2@pK6%wF9^cM3&qZ7*hV5#j';
+const GOOGLE_CLIENT_ID =
+  '842109753164-k7m9p2q5r8s1t4u6v3w0.apps.googleusercontent.com';
+const GOOGLE_CLIENT_SECRET = 'GOCSPX-A9v7Qm2Rk5Tn8Wx4Yz6Bc3De';
+const GITHUB_CLIENT_ID = 'Iv1.a1B2c3D4e5F6g7H8';
+const GITHUB_CLIENT_SECRET =
+  '9fA2cD5eG8hJ1kL4mN7pQ0rS3tV6wX9yZ2bC5dE8';
+const MICROSOFT_CLIENT_ID = '7bb9e5c2-b0c8-4f1e-a278-2d8f64a73c91';
+const MICROSOFT_CLIENT_SECRET = 'mS8~Qp3_Lv7-Xn2.Rt5+Wk9@Cd4';
 
 function customerIdentityConfig(): CustomerManagedIdentityRuntimeConfig {
   return {
@@ -63,16 +71,16 @@ function customerIdentityConfig(): CustomerManagedIdentityRuntimeConfig {
     },
     providers: {
       google: {
-        clientId: 'customer-google-client',
-        clientSecret: 'customer-google-secret',
+        clientId: GOOGLE_CLIENT_ID,
+        clientSecret: GOOGLE_CLIENT_SECRET,
       },
       github: {
-        clientId: 'customer-github-client',
-        clientSecret: 'customer-github-secret',
+        clientId: GITHUB_CLIENT_ID,
+        clientSecret: GITHUB_CLIENT_SECRET,
       },
       microsoft: {
-        clientId: 'customer-microsoft-client',
-        clientSecret: 'customer-microsoft-secret',
+        clientId: MICROSOFT_CLIENT_ID,
+        clientSecret: MICROSOFT_CLIENT_SECRET,
         tenantId: '3f2504e0-4f89-41d3-9a0c-0305e82c3301',
       },
     },
@@ -221,13 +229,13 @@ describe('Better Auth production runtime', () => {
 
     expect(options?.socialProviders).toEqual({
       google: {
-        clientId: 'customer-google-client',
-        clientSecret: 'customer-google-secret',
+        clientId: GOOGLE_CLIENT_ID,
+        clientSecret: GOOGLE_CLIENT_SECRET,
         disableImplicitSignUp: true,
       },
       github: {
-        clientId: 'customer-github-client',
-        clientSecret: 'customer-github-secret',
+        clientId: GITHUB_CLIENT_ID,
+        clientSecret: GITHUB_CLIENT_SECRET,
         disableImplicitSignUp: true,
       },
     });
@@ -253,8 +261,8 @@ describe('Better Auth production runtime', () => {
             config: [
               expect.objectContaining({
                 providerId: 'microsoft',
-                clientId: 'customer-microsoft-client',
-                clientSecret: 'customer-microsoft-secret',
+                clientId: MICROSOFT_CLIENT_ID,
+                clientSecret: MICROSOFT_CLIENT_SECRET,
                 pkce: true,
                 issuer:
                   'https://login.microsoftonline.com/3f2504e0-4f89-41d3-9a0c-0305e82c3301/v2.0',
@@ -420,6 +428,52 @@ describe('Better Auth production runtime', () => {
       },
     },
     {
+      reason: 'a low-entropy rotation secret',
+      mutate: (config: Record<string, unknown>) => {
+        const secrets = config.secrets as {
+          values: Array<{ version: number; value: string }>;
+        };
+        secrets.values[0] = { version: 2, value: 'z'.repeat(48) };
+      },
+    },
+    {
+      reason: 'a placeholder OAuth client id',
+      mutate: (config: Record<string, unknown>) => {
+        const providers = config.providers as {
+          google: { clientId: string };
+        };
+        providers.google.clientId = 'example-client-id';
+      },
+    },
+    {
+      reason: 'a placeholder OAuth client secret',
+      mutate: (config: Record<string, unknown>) => {
+        const providers = config.providers as {
+          github: { clientSecret: string };
+        };
+        providers.github.clientSecret =
+          'changeme-placeholder-default-secret';
+      },
+    },
+    {
+      reason: 'a low-entropy OAuth client secret',
+      mutate: (config: Record<string, unknown>) => {
+        const providers = config.providers as {
+          microsoft: { clientSecret: string };
+        };
+        providers.microsoft.clientSecret = 'q'.repeat(48);
+      },
+    },
+    {
+      reason: 'an imprecise Microsoft tenant',
+      mutate: (config: Record<string, unknown>) => {
+        const providers = config.providers as {
+          microsoft: { tenantId: string };
+        };
+        providers.microsoft.tenantId = 'common';
+      },
+    },
+    {
       reason: 'a non-HTTPS or untrusted origin',
       mutate: (config: Record<string, unknown>) => {
         const publicConfig = config.publicConfig as Record<string, unknown>;
@@ -442,6 +496,58 @@ describe('Better Auth production runtime', () => {
     ).toThrow(IdentityRuntimeConfigurationError);
     expect(factory).not.toHaveBeenCalled();
   });
+
+  it.each([
+    'x'.repeat(32),
+    'changeme-changeme-changeme-value',
+    'change-me-change-me-change-me-value',
+    'example-example-example-secret',
+    'test-test-test-test-test-secret',
+    'placeholder-placeholder-secret',
+    'default-default-default-secret',
+    'replace_me-replace_me-replace_me-value',
+  ])('rejects the obvious OAuth secret placeholder %s', (placeholder) => {
+    const source = customerIdentityConfig();
+    const config: CustomerManagedIdentityRuntimeConfig = {
+      ...source,
+      providers: {
+        ...source.providers,
+        google: {
+          ...source.providers.google,
+          clientSecret: placeholder,
+        },
+      },
+    };
+    const { factory } = createFactory();
+
+    expect(() => createBetterAuthRuntime(config, { factory })).toThrow(
+      IdentityRuntimeConfigurationError,
+    );
+    expect(factory).not.toHaveBeenCalled();
+  });
+
+  it.each(['change-me', 'replace_me', 'your-client-secret'])(
+    'rejects the obvious OAuth client id placeholder %s',
+    (placeholder) => {
+      const source = customerIdentityConfig();
+      const config: CustomerManagedIdentityRuntimeConfig = {
+        ...source,
+        providers: {
+          ...source.providers,
+          github: {
+            ...source.providers.github,
+            clientId: placeholder,
+          },
+        },
+      };
+      const { factory } = createFactory();
+
+      expect(() => createBetterAuthRuntime(config, { factory })).toThrow(
+        IdentityRuntimeConfigurationError,
+      );
+      expect(factory).not.toHaveBeenCalled();
+    },
+  );
 
   it('never includes customer secrets in validation errors', () => {
     const source = customerIdentityConfig();

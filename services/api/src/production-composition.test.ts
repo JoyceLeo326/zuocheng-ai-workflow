@@ -167,8 +167,8 @@ function createCustomerIdentityConfig(): CustomerManagedIdentityRuntimeConfig {
     secrets: {
       kind: 'customer-managed-secret-rotation',
       values: [
-        { version: 2, value: 'c'.repeat(48) },
-        { version: 1, value: 'p'.repeat(48) },
+        { version: 2, value: 'Fixture!Rotation#2-NotAReal$Secret-2026' },
+        { version: 1, value: 'Fixture!Rotation#1-NotAReal$Secret-2025' },
       ],
     },
     mailer: {
@@ -184,16 +184,16 @@ function createCustomerIdentityConfig(): CustomerManagedIdentityRuntimeConfig {
     },
     providers: {
       google: {
-        clientId: 'customer-google-client',
-        clientSecret: 'customer-google-secret',
+        clientId: 'fixture-google-client-2026',
+        clientSecret: 'Fixture.Google.Secret-NotReal-2026',
       },
       github: {
-        clientId: 'customer-github-client',
-        clientSecret: 'customer-github-secret',
+        clientId: 'fixture-github-client-2026',
+        clientSecret: 'Fixture.GitHub.Secret-NotReal-2026',
       },
       microsoft: {
-        clientId: 'customer-microsoft-client',
-        clientSecret: 'customer-microsoft-secret',
+        clientId: 'fixture-microsoft-client-2026',
+        clientSecret: 'Fixture.Microsoft.Secret-NotReal-2026',
         tenantId: '3f2504e0-4f89-41d3-9a0c-0305e82c3301',
       },
     },

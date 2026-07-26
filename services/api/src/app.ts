@@ -184,6 +184,7 @@ export function createApp(
     const problem = mapErrorToProblem(error, context.get('requestId'));
     return context.json(problem.body, problem.status, {
       'Content-Type': 'application/problem+json',
+      ...problem.headers,
     });
   });
 

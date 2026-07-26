@@ -20,6 +20,9 @@ const RECENT_AUTH_AGE_SECONDS = 10 * 60;
 const VERIFICATION_EXPIRES_IN_SECONDS = 60 * 60;
 const RESET_EXPIRES_IN_SECONDS = 60 * 60;
 const MINIMUM_SECRET_BYTES = 32;
+const MINIMUM_OAUTH_CLIENT_ID_BYTES = 8;
+const MINIMUM_OAUTH_CLIENT_SECRET_BYTES = 20;
+const MINIMUM_DISTINCT_SECRET_CHARACTERS = 8;
 const MAXIMUM_ROTATION_KEYS = 8;
 const MICROSOFT_TENANT_ID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
@@ -471,7 +474,7 @@ function parseSecrets(input: unknown): CustomerSecretRotation {
       (candidate.version as number) <= 0 ||
       (candidate.version as number) >= previousVersion ||
       typeof candidate.value !== 'string' ||
-      Buffer.byteLength(candidate.value, 'utf8') < MINIMUM_SECRET_BYTES ||
+      !isStrongSecret(candidate.value, MINIMUM_SECRET_BYTES) ||
       seenValues.has(candidate.value)
     ) {
       throw new IdentityRuntimeConfigurationError(
@@ -545,8 +548,11 @@ function parseProvider(
   if (
     !isRecord(input) ||
     !hasExactKeys(input, keys) ||
-    !isNonEmptyCredential(input.clientId) ||
-    !isNonEmptyCredential(input.clientSecret) ||
+    !isValidClientId(input.clientId) ||
+    !isStrongSecret(
+      input.clientSecret,
+      MINIMUM_OAUTH_CLIENT_SECRET_BYTES,
+    ) ||
     (microsoft &&
       (typeof input.tenantId !== 'string' ||
         !MICROSOFT_TENANT_ID.test(input.tenantId)))
@@ -567,11 +573,60 @@ function parseProvider(
       };
 }
 
-function isNonEmptyCredential(value: unknown): value is string {
+function isValidClientId(value: unknown): value is string {
   return (
     typeof value === 'string' &&
-    value.trim().length > 0 &&
-    value.length <= 4_096
+    value === value.trim() &&
+    Buffer.byteLength(value, 'utf8') >= MINIMUM_OAUTH_CLIENT_ID_BYTES &&
+    value.length <= 512 &&
+    !containsObviousPlaceholder(value)
+  );
+}
+
+function isStrongSecret(
+  value: unknown,
+  minimumBytes: number,
+): value is string {
+  return (
+    typeof value === 'string' &&
+    value === value.trim() &&
+    Buffer.byteLength(value, 'utf8') >= minimumBytes &&
+    value.length <= 4_096 &&
+    new Set(value).size >= MINIMUM_DISTINCT_SECRET_CHARACTERS &&
+    !containsObviousPlaceholder(value)
+  );
+}
+
+function containsObviousPlaceholder(value: string): boolean {
+  const normalized = value.toLowerCase();
+  const compact = normalized.replace(/[^a-z0-9]+/gu, '');
+  const tokens = normalized
+    .split(/[^a-z0-9]+/u)
+    .filter((token) => token.length > 0);
+  const placeholders = new Set([
+    'changeme',
+    'default',
+    'dummy',
+    'example',
+    'placeholder',
+    'replace',
+    'sample',
+    'test',
+    'todo',
+  ]);
+  return (
+    /^x+$/u.test(compact) ||
+    compact === 'changeme' ||
+    compact === 'replaceme' ||
+    tokens.some((token) => placeholders.has(token)) ||
+    tokens.some(
+      (token, index) =>
+        (token === 'change' || token === 'replace') &&
+        tokens[index + 1] === 'me',
+    ) ||
+    /^(?:your|my)(?:client|oauth|provider)?(?:id|secret|key)$/u.test(
+      compact,
+    )
   );
 }
 
