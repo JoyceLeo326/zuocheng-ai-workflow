@@ -18,26 +18,12 @@ export type RestorableProjectStatus = Exclude<
   'trashed'
 >;
 
-type DeepReadonly<T> = T extends
-  | null
-  | undefined
-  | string
-  | number
-  | boolean
-  ? T
-  : T extends readonly (infer Item)[]
-    ? readonly DeepReadonly<Item>[]
-    : T extends (...args: never[]) => unknown
-      ? T
-      : { readonly [Key in keyof T]: DeepReadonly<T[Key]> };
-
-type MutableLifecycleProject = Omit<Project, 'status'> & {
+export type LifecycleProject = Omit<Project, 'status'> & {
   status: LifecycleProjectStatus;
   statusBeforeTrash: RestorableProjectStatus | null;
   trashedAt: IsoDateTime | null;
 };
 
-export type LifecycleProject = DeepReadonly<MutableLifecycleProject>;
 export type LifecycleProjectInput = Project | LifecycleProject;
 
 export interface ProjectLifecycleCommand {
@@ -54,6 +40,11 @@ export interface PermanentDeleteProjectIntent {
   readonly projectId: EntityId;
   readonly projectVersion: number;
   readonly requestedAt: IsoDateTime;
+}
+
+export interface ProjectCopyResult {
+  readonly project: LifecycleProject;
+  readonly idMap: Readonly<Record<EntityId, EntityId>>;
 }
 
 export type ProjectLifecycleErrorCode =
@@ -90,13 +81,20 @@ export function copyProject(
   source: LifecycleProjectInput,
   command: CopyProjectCommand,
 ): LifecycleProject {
+  return copyProjectWithMapping(source, command).project;
+}
+
+export function copyProjectWithMapping(
+  source: LifecycleProjectInput,
+  command: CopyProjectCommand,
+): ProjectCopyResult {
   const current = normalizeLifecycleProject(source);
   assertCommand(current, command);
   if (current.status === 'trashed') {
     fail('PROJECT_TRASHED', 'A trashed project cannot be copied.');
   }
 
-  const sourceProject = projectForModel(current);
+  const sourceProject = current;
   const oldIds = collectEntityIds(sourceProject);
   const idMap = new Map<EntityId, EntityId>();
   const generatedIds = new Set<EntityId>();
@@ -172,11 +170,15 @@ export function copyProject(
       error,
     );
   }
-  return freezeProject({
+  const project = freezeProject({
     ...parsed,
     status: 'active',
     statusBeforeTrash: null,
     trashedAt: null,
+  });
+  return Object.freeze({
+    project,
+    idMap: Object.freeze(Object.fromEntries(idMap)),
   });
 }
 
@@ -287,7 +289,7 @@ function transitionProject(
 
 function normalizeLifecycleProject(
   input: LifecycleProjectInput,
-): MutableLifecycleProject {
+): LifecycleProject {
   let candidate: unknown;
   try {
     candidate = structuredClone(input);
@@ -307,45 +309,9 @@ function normalizeLifecycleProject(
   ) {
     fail('INVALID_PROJECT', 'Project aggregate must be an object.');
   }
-  const raw = candidate as Record<string, unknown>;
-  const status = raw.status;
-  const statusBeforeTrash =
-    'statusBeforeTrash' in raw ? raw.statusBeforeTrash : null;
-  const trashedAt = 'trashedAt' in raw ? raw.trashedAt : null;
-  if (
-    status !== 'active' &&
-    status !== 'archived' &&
-    status !== 'trashed'
-  ) {
-    fail('INVALID_PROJECT', 'Project has an invalid lifecycle status.');
-  }
-  if (status === 'trashed') {
-    if (
-      (statusBeforeTrash !== 'active' &&
-        statusBeforeTrash !== 'archived') ||
-      !isCanonicalDateTime(trashedAt)
-    ) {
-      fail(
-        'INVALID_PROJECT',
-        'A trashed project requires its previous status and trashedAt.',
-      );
-    }
-  } else if (statusBeforeTrash !== null || trashedAt !== null) {
-    fail(
-      'INVALID_PROJECT',
-      'A non-trashed project cannot retain trash metadata.',
-    );
-  }
-
-  const modelInput: Record<string, unknown> = {
-    ...raw,
-    status: status === 'trashed' ? statusBeforeTrash : status,
-  };
-  delete modelInput.statusBeforeTrash;
-  delete modelInput.trashedAt;
   let parsed: Project;
   try {
-    parsed = parseProject(modelInput);
+    parsed = parseProject(candidate);
   } catch (error) {
     throw new ProjectLifecycleError(
       'INVALID_PROJECT',
@@ -357,30 +323,13 @@ function normalizeLifecycleProject(
   }
   return {
     ...parsed,
-    status,
-    statusBeforeTrash:
-      status === 'trashed'
-        ? (statusBeforeTrash as RestorableProjectStatus)
-        : null,
-    trashedAt: status === 'trashed' ? (trashedAt as string) : null,
+    statusBeforeTrash: parsed.statusBeforeTrash ?? null,
+    trashedAt: parsed.trashedAt ?? null,
   };
 }
 
-function projectForModel(project: MutableLifecycleProject): Project {
-  const snapshot: Record<string, unknown> = { ...project };
-  delete snapshot.statusBeforeTrash;
-  delete snapshot.trashedAt;
-  return parseProject({
-    ...snapshot,
-    status:
-      project.status === 'trashed'
-        ? (project.statusBeforeTrash ?? 'active')
-        : project.status,
-  });
-}
-
 function assertCommand(
-  project: MutableLifecycleProject,
+  project: LifecycleProject,
   command: ProjectLifecycleCommand,
 ): void {
   if (
@@ -509,19 +458,19 @@ function resetVersionedEntities(
 }
 
 function freezeProject(
-  project: MutableLifecycleProject,
+  project: LifecycleProject,
 ): LifecycleProject {
-  return deepFreeze(project) as LifecycleProject;
+  return deepFreeze(project);
 }
 
-function deepFreeze<T>(value: T): DeepReadonly<T> {
+function deepFreeze<T>(value: T): T {
   if (typeof value !== 'object' || value === null) {
-    return value as DeepReadonly<T>;
+    return value;
   }
   Object.values(value).forEach((item) => {
     deepFreeze(item);
   });
-  return Object.freeze(value) as DeepReadonly<T>;
+  return Object.freeze(value);
 }
 
 function isUuidV7(value: unknown): value is EntityId {

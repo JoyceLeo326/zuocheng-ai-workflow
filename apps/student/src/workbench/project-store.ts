@@ -9,6 +9,14 @@ import {
   type SourceChunk,
   type VersionedEntity,
 } from './project-model.js';
+import {
+  ProjectLifecycleError,
+  copyProjectWithMapping,
+  requestPermanentDelete,
+  type CopyProjectCommand,
+  type PermanentDeleteProjectIntent,
+  type ProjectCopyResult,
+} from './project-lifecycle.js';
 
 export const PROJECT_EXPORT_FORMAT = 'zuocheng-project' as const;
 export const PROJECT_EXPORT_FORMAT_VERSION = 1 as const;
@@ -48,7 +56,11 @@ export interface ProjectStore {
   createProject(project: Project): Promise<Project>;
   getProject(projectId: EntityId): Promise<Project | null>;
   listProjects(): Promise<Project[]>;
-  deleteProject(projectId: EntityId): Promise<void>;
+  copyProject(
+    projectId: EntityId,
+    command: CopyProjectCommand,
+  ): Promise<Project>;
+  deleteProject(intent: PermanentDeleteProjectIntent): Promise<void>;
   saveProject(project: Project, expectedVersion: number): Promise<Project>;
   putSourceBlob(
     projectId: EntityId,
@@ -571,6 +583,119 @@ function blobKey(projectId: EntityId, sourceFileId: EntityId): string {
   return `${projectId}:${sourceFileId}`;
 }
 
+function validatePermanentDeleteIntent(
+  project: Project,
+  intent: PermanentDeleteProjectIntent,
+): void {
+  if (project.id !== intent.projectId) {
+    throw new ProjectStoreError(
+      'permanent delete intent does not match the stored project',
+    );
+  }
+  requestPermanentDelete(project, {
+    expectedVersion: intent.projectVersion,
+    now: intent.requestedAt,
+  });
+}
+
+function copyEditHistory(
+  edits: readonly ProjectEdit[],
+  result: ProjectCopyResult,
+  command: CopyProjectCommand,
+  unavailableIds: ReadonlySet<EntityId>,
+): ProjectEdit[] {
+  const occupied = new Set<EntityId>([
+    ...unavailableIds,
+    ...Object.keys(result.idMap),
+    ...Object.values(result.idMap),
+  ]);
+  const editIds = new Map<EntityId, EntityId>();
+  for (const edit of edits) {
+    editIds.set(edit.id, nextCopyId(command, occupied));
+  }
+  const idMap: Readonly<Record<EntityId, EntityId>> = {
+    ...result.idMap,
+    ...Object.fromEntries(editIds),
+  };
+  return edits.map((edit) =>
+    parseProjectEdit({
+      ...edit,
+      id: editIds.get(edit.id),
+      version: 1,
+      createdAt: command.now,
+      updatedAt: command.now,
+      projectId: result.project.id,
+      projectVersion: 1,
+      before: remapJsonValue(edit.before, idMap),
+      after: remapJsonValue(edit.after, idMap),
+    }),
+  );
+}
+
+function nextCopyId(
+  command: CopyProjectCommand,
+  occupied: Set<EntityId>,
+): EntityId {
+  let id: EntityId;
+  try {
+    id = command.idFactory();
+  } catch (error) {
+    throw new ProjectLifecycleError(
+      'INVALID_UUID_FACTORY',
+      'The UUID factory failed while copying project edit history.',
+      undefined,
+      undefined,
+      error,
+    );
+  }
+  if (
+    !UUID_V7.test(id) ||
+    id !== id.toLowerCase() ||
+    occupied.has(id)
+  ) {
+    throw new ProjectLifecycleError(
+      'INVALID_UUID_FACTORY',
+      'The UUID factory must return unique new canonical UUIDv7 values.',
+    );
+  }
+  occupied.add(id);
+  return id;
+}
+
+function remapJsonValue(
+  value: JsonValue,
+  idMap: Readonly<Record<EntityId, EntityId>>,
+): JsonValue {
+  if (typeof value === 'string') {
+    return idMap[value] ?? value;
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => remapJsonValue(item, idMap));
+  }
+  if (typeof value !== 'object' || value === null) {
+    return value;
+  }
+  return Object.fromEntries(
+    Object.entries(value).map(([key, item]) => [
+      idMap[key] ?? key,
+      remapJsonValue(item, idMap),
+    ]),
+  );
+}
+
+function copiedSourceFileId(
+  sourceFileId: EntityId,
+  result: ProjectCopyResult,
+): EntityId {
+  const copied = result.idMap[sourceFileId];
+  if (copied === undefined) {
+    throw new ProjectStoreError(
+      `copied source file mapping is missing for ${sourceFileId}`,
+    );
+  }
+  return copied;
+}
+
 export interface MemoryProjectDatabase {
   readonly projects: Map<EntityId, Project>;
   readonly sourceBlobs: Map<string, Blob>;
@@ -618,10 +743,61 @@ export class MemoryProjectStore implements ProjectStore {
       .map((project) => clone(project));
   }
 
-  async deleteProject(projectId: EntityId): Promise<void> {
-    if (!this.#database.projects.has(projectId)) {
+  async copyProject(
+    projectId: EntityId,
+    command: CopyProjectCommand,
+  ): Promise<Project> {
+    const stored = this.#database.projects.get(projectId);
+    if (stored === undefined) {
       throw new ProjectNotFoundError(projectId);
     }
+    const result = copyProjectWithMapping(clone(stored), command);
+    const project = parseProject(result.project);
+    if (this.#database.projects.has(project.id)) {
+      throw new ProjectAlreadyExistsError(project.id);
+    }
+    this.#assertChunkIdsAvailable(project);
+    const sourceEdits = [...this.#database.edits.values()].filter(
+      (edit) => edit.projectId === projectId,
+    );
+    const copiedEdits = copyEditHistory(
+      sourceEdits,
+      result,
+      command,
+      new Set(this.#database.edits.keys()),
+    );
+    const copiedBlobs: Array<readonly [string, Blob]> = [];
+    for (const sourceFile of stored.sourceFiles) {
+      const blob = this.#database.sourceBlobs.get(
+        blobKey(projectId, sourceFile.id),
+      );
+      if (blob !== undefined) {
+        const copiedFileId = copiedSourceFileId(sourceFile.id, result);
+        copiedBlobs.push([
+          blobKey(project.id, copiedFileId),
+          clone(blob),
+        ]);
+      }
+    }
+
+    this.#database.projects.set(project.id, clone(project));
+    for (const [key, blob] of copiedBlobs) {
+      this.#database.sourceBlobs.set(key, blob);
+    }
+    this.#writeProjectChunks(project);
+    for (const edit of copiedEdits) {
+      this.#database.edits.set(edit.id, clone(edit));
+    }
+    return clone(project);
+  }
+
+  async deleteProject(intent: PermanentDeleteProjectIntent): Promise<void> {
+    const projectId = intent.projectId;
+    const current = this.#database.projects.get(projectId);
+    if (current === undefined) {
+      throw new ProjectNotFoundError(projectId);
+    }
+    validatePermanentDeleteIntent(current, intent);
     this.#database.projects.delete(projectId);
     for (const key of this.#database.sourceBlobs.keys()) {
       if (key.startsWith(`${projectId}:`)) {
@@ -1023,17 +1199,126 @@ export class IndexedDbProjectStore implements ProjectStore {
       .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
   }
 
-  async deleteProject(projectId: EntityId): Promise<void> {
+  async copyProject(
+    projectId: EntityId,
+    command: CopyProjectCommand,
+  ): Promise<Project> {
     const database = await this.#database();
     const transaction = database.transaction(
       [PROJECTS_STORE, BLOBS_STORE, CHUNKS_STORE, EDITS_STORE],
       'readwrite',
     );
     const projects = transaction.objectStore(PROJECTS_STORE);
-    const current = await requestResult(projects.get(projectId));
+    const stored = (await requestResult(projects.get(projectId))) as
+      | Project
+      | undefined;
+    if (stored === undefined) {
+      transaction.abort();
+      throw new ProjectNotFoundError(projectId);
+    }
+    let result: ProjectCopyResult;
+    let project: Project;
+    try {
+      result = copyProjectWithMapping(parseProject(stored), command);
+      project = parseProject(result.project);
+    } catch (error) {
+      transaction.abort();
+      throw error;
+    }
+    if ((await requestResult(projects.get(project.id))) !== undefined) {
+      transaction.abort();
+      throw new ProjectAlreadyExistsError(project.id);
+    }
+    const sourceBlobs = (await requestResult(
+      transaction
+        .objectStore(BLOBS_STORE)
+        .index(PROJECT_ID_INDEX)
+        .getAll(projectId),
+    )) as StoredBlob[];
+    const sourceChunks = (await requestResult(
+      transaction
+        .objectStore(CHUNKS_STORE)
+        .index(PROJECT_ID_INDEX)
+        .getAll(projectId),
+    )) as SourceChunk[];
+    if (
+      !sameChunks(
+        stored.sourceChunks,
+        sortChunks(sourceChunks.map((chunk) => parseSourceChunk(chunk))),
+      )
+    ) {
+      transaction.abort();
+      throw new ProjectStoreError(
+        'cannot copy inconsistent project.sourceChunks',
+      );
+    }
+    const editsStore = transaction.objectStore(EDITS_STORE);
+    const sourceEdits = (await requestResult(
+      editsStore.index(PROJECT_ID_INDEX).getAll(projectId),
+    )) as ProjectEdit[];
+    const unavailableEditIds = new Set(
+      (await requestResult(editsStore.getAllKeys())).map(String),
+    );
+    let copiedEdits: ProjectEdit[];
+    try {
+      copiedEdits = copyEditHistory(
+        sourceEdits.map((edit, index) =>
+          parseProjectEdit(edit, `edits[${index}]`),
+        ),
+        result,
+        command,
+        unavailableEditIds,
+      );
+    } catch (error) {
+      transaction.abort();
+      throw error;
+    }
+
+    projects.add(clone(project));
+    const blobs = transaction.objectStore(BLOBS_STORE);
+    for (const entry of sourceBlobs) {
+      const sourceFileId = copiedSourceFileId(entry.sourceFileId, result);
+      const copied: StoredBlob = {
+        key: blobKey(project.id, sourceFileId),
+        projectId: project.id,
+        sourceFileId,
+        blob: clone(entry.blob),
+      };
+      blobs.add(copied);
+    }
+    const chunks = transaction.objectStore(CHUNKS_STORE);
+    for (const chunk of project.sourceChunks) {
+      chunks.add(clone(chunk));
+    }
+    for (const edit of copiedEdits) {
+      editsStore.add(clone(edit));
+    }
+    await transactionDone(transaction);
+    return clone(project);
+  }
+
+  async deleteProject(
+    intent: PermanentDeleteProjectIntent,
+  ): Promise<void> {
+    const projectId = intent.projectId;
+    const database = await this.#database();
+    const transaction = database.transaction(
+      [PROJECTS_STORE, BLOBS_STORE, CHUNKS_STORE, EDITS_STORE],
+      'readwrite',
+    );
+    const projects = transaction.objectStore(PROJECTS_STORE);
+    const current = (await requestResult(projects.get(projectId))) as
+      | Project
+      | undefined;
     if (current === undefined) {
       transaction.abort();
       throw new ProjectNotFoundError(projectId);
+    }
+    try {
+      validatePermanentDeleteIntent(parseProject(current), intent);
+    } catch (error) {
+      transaction.abort();
+      throw error;
     }
     projects.delete(projectId);
     for (const storeName of [
