@@ -180,6 +180,20 @@ export async function executeOutlineStageAction<T>(
   }
 }
 
+export async function selectAndLockOutline(
+  outline: Outline,
+  callbacks: Pick<
+    OutlineStageCallbacks,
+    'onSelectOutline' | 'onLockOutline'
+  >,
+): Promise<void> {
+  const input = { outlineId: outline.id };
+  if (outline.status === 'draft') {
+    await callbacks.onSelectOutline(input);
+  }
+  await callbacks.onLockOutline(input);
+}
+
 export function OutlineStage({
   project,
   outlines,
@@ -235,7 +249,11 @@ export function OutlineStage({
   const evidenceCards = useMemo(
     () =>
       project.evidenceCards.filter(
-        (evidence) => evidence.status !== 'rejected',
+        (evidence) =>
+          evidence.status === 'verified' &&
+          evidence.confirmationStatus === 'confirmed' &&
+          evidence.userConfirmedAt !== null &&
+          evidence.userConfirmedAt !== undefined,
       ),
     [project.evidenceCards],
   );
@@ -272,7 +290,9 @@ export function OutlineStage({
           const evidence = evidenceById.get(evidenceId);
           return (
             evidence?.status === 'verified' &&
-            evidence.confirmationStatus === 'confirmed'
+            evidence.confirmationStatus === 'confirmed' &&
+            evidence.userConfirmedAt !== null &&
+            evidence.userConfirmedAt !== undefined
           );
         }),
     ) &&
@@ -452,24 +472,16 @@ export function OutlineStage({
                       ) : (
                         <button
                           className="outline-stage__button outline-stage__button--quiet"
-                          disabled={saving || outline.status === 'archived'}
+                          disabled={saving}
                           onClick={() => {
-                            void runAction(
-                              `select:${outline.id}`,
-                              onSelectOutline,
-                              { outlineId: outline.id },
-                              () => {
-                                setActiveOutlineId(outline.id);
-                                setNewNodeDraft(EMPTY_NODE_DRAFT);
-                              },
-                            );
+                            setActiveOutlineId(outline.id);
+                            setNewNodeDraft(EMPTY_NODE_DRAFT);
                           }}
                           type="button"
                         >
-                          {actionState.actionKey ===
-                          `select:${outline.id}`
-                            ? '选择中…'
-                            : '选择此方案'}
+                          {outline.status === 'archived'
+                            ? '查看方案'
+                            : '查看并编辑'}
                         </button>
                       )}
                     </article>
@@ -559,8 +571,12 @@ export function OutlineStage({
                 onClick={() => {
                   void runAction(
                     'lock-outline',
-                    onLockOutline,
-                    { outlineId: activeOutline.id },
+                    async () =>
+                      selectAndLockOutline(activeOutline, {
+                        onSelectOutline,
+                        onLockOutline,
+                      }),
+                    undefined,
                   );
                 }}
                 type="button"
@@ -843,9 +859,10 @@ export function OutlineStage({
                     id="new-node-title"
                     maxLength={200}
                     onChange={(event) => {
+                      const value = event.currentTarget.value;
                       setNewNodeDraft((current) => ({
                         ...current,
-                        title: event.currentTarget.value,
+                        title: value,
                       }));
                     }}
                     placeholder="例如：结论边界"
@@ -859,9 +876,10 @@ export function OutlineStage({
                     id="new-node-conclusion"
                     maxLength={4_000}
                     onChange={(event) => {
+                      const value = event.currentTarget.value;
                       setNewNodeDraft((current) => ({
                         ...current,
-                        conclusion: event.currentTarget.value,
+                        conclusion: value,
                       }));
                     }}
                     placeholder="写下本节点要表达的明确结论"

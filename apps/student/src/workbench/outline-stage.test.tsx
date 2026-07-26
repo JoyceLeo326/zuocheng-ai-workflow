@@ -9,6 +9,7 @@ import {
   OutlineStage,
   executeOutlineStageAction,
   outlineStageActionReducer,
+  selectAndLockOutline,
   summarizeOutline,
   type OutlineStageCallbacks,
 } from './outline-stage.js';
@@ -242,7 +243,7 @@ describe('outline stage', () => {
     expect(html).toContain('2 条证据');
     expect(html).toContain('交付要求 2/2');
     expect(html).toContain('评分标准 1/1');
-    expect(html).toContain('选择此方案');
+    expect(html).toContain('查看并编辑');
     expect(html).toContain('新建结构方案');
   });
 
@@ -339,6 +340,39 @@ describe('outline stage', () => {
       rubricCovered: 1,
       rubricTotal: 1,
     });
+  });
+
+  it('selects a complete draft before locking and locks an already-selected outline directly', async () => {
+    const onSelectOutline = vi.fn().mockResolvedValue(undefined);
+    const onLockOutline = vi.fn().mockResolvedValue(undefined);
+    const draft = {
+      ...project().outlines[0]!,
+      status: 'draft' as const,
+      lockedAt: null,
+    };
+
+    await selectAndLockOutline(draft, {
+      onSelectOutline,
+      onLockOutline,
+    });
+    expect(onSelectOutline).toHaveBeenCalledWith({
+      outlineId: draft.id,
+    });
+    expect(onLockOutline).toHaveBeenCalledWith({
+      outlineId: draft.id,
+    });
+    expect(onSelectOutline.mock.invocationCallOrder[0]).toBeLessThan(
+      onLockOutline.mock.invocationCallOrder[0]!,
+    );
+
+    onSelectOutline.mockClear();
+    onLockOutline.mockClear();
+    await selectAndLockOutline(
+      { ...draft, status: 'selected' },
+      { onSelectOutline, onLockOutline },
+    );
+    expect(onSelectOutline).not.toHaveBeenCalled();
+    expect(onLockOutline).toHaveBeenCalledTimes(1);
   });
 
   it('models real pending/error states and forwards exact operation payloads', async () => {
