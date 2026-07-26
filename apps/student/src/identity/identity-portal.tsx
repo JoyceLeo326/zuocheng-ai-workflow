@@ -10,8 +10,10 @@ import {
 } from './identity-client.js';
 import {
   AuthenticationPanel,
+  IdentityLoadingState,
   SecurityCenter,
   type AuthenticationMode,
+  type IdentityFeedbackKind,
 } from './identity-views.js';
 import {
   createPasskeyCredential,
@@ -52,52 +54,127 @@ export function sanitizedIdentityUrl(rawUrl: string) {
   return `${url.pathname}${search.length === 0 ? '' : `?${search}`}${url.hash}`;
 }
 
-export function identityErrorMessage(reason: unknown) {
+export interface IdentityErrorPresentation {
+  kind: IdentityFeedbackKind;
+  title: string;
+  message: string;
+}
+
+export function identityErrorPresentation(
+  reason: unknown,
+): IdentityErrorPresentation {
   if (reason instanceof IdentityApiError) {
     if (reason.code === 'RATE_LIMITED') {
-      return reason.retryAfterSeconds === undefined
-        ? '请求过于频繁，请稍后重试。'
-        : `请求过于频繁，请在 ${String(reason.retryAfterSeconds)} 秒后重试。`;
+      return {
+        kind: 'rate-limit',
+        title: '操作冷却中',
+        message:
+          reason.retryAfterSeconds === undefined
+            ? '请求过于频繁，请稍后重试。'
+            : `请求过于频繁，请在 ${String(reason.retryAfterSeconds)} 秒后重试。`,
+      };
     }
     if (
       reason.code === 'EMAIL_PROVIDER_UNAVAILABLE' ||
       reason.code === 'MAIL_PROVIDER_UNAVAILABLE'
     ) {
-      return '客户邮件服务当前不可用，未发送任何假邮件。请联系部署方后重试。';
+      return {
+        kind: 'provider-unavailable',
+        title: '邮件服务暂不可用',
+        message:
+          '客户邮件服务当前不可用，未发送任何假邮件。请联系部署方后重试。',
+      };
     }
     if (
       reason.code === 'OAUTH_PROVIDER_UNAVAILABLE' ||
       reason.code === 'IDENTITY_PROVIDER_UNAVAILABLE'
     ) {
-      return '该登录服务尚未由部署方完成配置，请选择其他真实登录方式。';
+      return {
+        kind: 'provider-unavailable',
+        title: '登录方式暂不可用',
+        message: '该登录服务尚未由部署方完成配置，请选择其他真实登录方式。',
+      };
     }
     if (reason.code === 'VERIFICATION_TOKEN_INVALID') {
-      return '验证链接无效、已过期或已使用，请重新发起。';
+      return {
+        kind: 'general',
+        title: '验证链接不可用',
+        message: '验证链接无效、已过期或已使用，请重新发起。',
+      };
     }
     if (reason.code === 'RECENT_AUTH_REQUIRED') {
-      return '该操作需要重新验证身份。';
+      return {
+        kind: 'permission',
+        title: '需要重新验证',
+        message: '该操作需要重新验证身份。',
+      };
     }
     if (reason.status === 401) {
-      return '会话已失效，请重新登录。';
+      return {
+        kind: 'permission',
+        title: '会话已结束',
+        message: '会话已失效，请重新登录。',
+      };
+    }
+    if (reason.status === 403) {
+      return {
+        kind: 'permission',
+        title: '没有执行权限',
+        message: '当前身份没有执行此操作的权限；系统没有绕过权限检查。',
+      };
     }
     if (reason.status === 404) {
-      return '身份 API 尚未连接；系统没有进入本地假登录模式。请检查正式 API 部署配置。';
+      return {
+        kind: 'unavailable',
+        title: '身份服务未连接',
+        message:
+          '身份 API 尚未连接；系统没有进入本地假登录模式。请检查正式 API 部署配置。',
+      };
     }
     if (reason.status === 409) {
-      return '状态已在其他设备发生变化，页面将重新读取最新结果。';
+      return {
+        kind: 'general',
+        title: '状态已发生变化',
+        message: '状态已在其他设备发生变化，页面将重新读取最新结果。',
+      };
     }
     if (reason.status === 503) {
-      return '身份服务暂时不可用，系统没有回报假成功。请稍后重试。';
+      return {
+        kind: 'unavailable',
+        title: '服务暂不可用',
+        message: '身份服务暂时不可用，系统没有回报假成功。请稍后重试。',
+      };
     }
-    return `操作未完成（${reason.code}）。请按页面提示重试。`;
+    return {
+      kind: 'general',
+      title: '操作未完成',
+      message: `操作未完成（${reason.code}）。请按页面提示重试。`,
+    };
   }
   if (reason instanceof TypeError) {
-    return '网络连接失败。请检查网络后重试；未完成的操作不会显示为成功。';
+    return {
+      kind: 'offline',
+      title: '无法连接网络',
+      message:
+        '网络连接失败。请检查网络后重试；未完成的操作不会显示为成功。',
+    };
   }
   if (reason instanceof DOMException && reason.name === 'NotAllowedError') {
-    return '认证器未授权或操作已取消，没有创建或使用 Passkey。';
+    return {
+      kind: 'permission',
+      title: '认证器未授权',
+      message: '认证器未授权或操作已取消，没有创建或使用 Passkey。',
+    };
   }
-  return '操作未完成。请重试；若问题持续，请向部署方提供当前时间。';
+  return {
+    kind: 'general',
+    title: '操作未完成',
+    message: '操作未完成。请重试；若问题持续，请向部署方提供当前时间。',
+  };
+}
+
+export function identityErrorMessage(reason: unknown) {
+  return identityErrorPresentation(reason).message;
 }
 
 interface PortalRuntime {
@@ -109,6 +186,8 @@ interface PortalRuntime {
 
 export interface IdentityPortalProps {
   client: IdentityClient;
+  initialMode?: AuthenticationMode;
+  onExit?: () => void;
   runtime?: PortalRuntime;
 }
 
@@ -139,6 +218,8 @@ function secureExternalUrl(rawUrl: string) {
 
 export function IdentityPortal({
   client,
+  initialMode,
+  onExit,
   runtime: suppliedRuntime,
 }: IdentityPortalProps) {
   const runtime = useMemo(
@@ -147,13 +228,19 @@ export function IdentityPortal({
   );
   const [link] = useState(() => parseIdentityLink(runtime.href));
   const [mode, setMode] = useState<AuthenticationMode>(
-    link.recoveryToken === null ? 'login' : 'reset',
+    link.recoveryToken === null ? (initialMode ?? 'login') : 'reset',
   );
   const [phase, setPhase] = useState<'loading' | 'anonymous' | 'authenticated'>(
-    'loading',
+    'anonymous',
   );
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [errorKind, setErrorKind] =
+    useState<IdentityFeedbackKind>('general');
+  const [errorTitle, setErrorTitle] = useState<string | null>(null);
+  const [offline, setOffline] = useState(
+    () => typeof navigator !== 'undefined' && !navigator.onLine,
+  );
   const [notice, setNotice] = useState<string | null>(
     link.verificationCompleted ? '邮箱已经验证，请登录继续。' : null,
   );
@@ -169,16 +256,30 @@ export function IdentityPortal({
     async (name: string, action: () => Promise<void>) => {
       setBusyAction(name);
       setError(null);
+      setErrorKind('general');
+      setErrorTitle(null);
       setNotice(null);
+      if (offline) {
+        setErrorKind('offline');
+        setErrorTitle('无法连接网络');
+        setError(
+          '网络已断开。恢复连接后再试；没有请求被标记为成功。',
+        );
+        setBusyAction(null);
+        return;
+      }
       try {
         await action();
       } catch (reason) {
-        setError(identityErrorMessage(reason));
+        const presentation = identityErrorPresentation(reason);
+        setErrorKind(presentation.kind);
+        setErrorTitle(presentation.title);
+        setError(presentation.message);
       } finally {
         setBusyAction(null);
       }
     },
-    [],
+    [offline],
   );
 
   const refreshSecurity = useCallback(async () => {
@@ -198,6 +299,18 @@ export function IdentityPortal({
   }, [client]);
 
   useEffect(() => {
+    const updateConnectivity = () => {
+      setOffline(!navigator.onLine);
+    };
+    window.addEventListener('online', updateConnectivity);
+    window.addEventListener('offline', updateConnectivity);
+    return () => {
+      window.removeEventListener('online', updateConnectivity);
+      window.removeEventListener('offline', updateConnectivity);
+    };
+  }, []);
+
+  useEffect(() => {
     runtime.replaceUrl(sanitizedIdentityUrl(runtime.href));
     let active = true;
     void client
@@ -206,8 +319,10 @@ export function IdentityPortal({
         if (!active) {
           return;
         }
-        setPhase('authenticated');
         await refreshSecurity();
+        if (active) {
+          setPhase('authenticated');
+        }
       })
       .catch((reason: unknown) => {
         if (!active) {
@@ -218,7 +333,10 @@ export function IdentityPortal({
           return;
         }
         setPhase('anonymous');
-        setError(identityErrorMessage(reason));
+        const presentation = identityErrorPresentation(reason);
+        setErrorKind(presentation.kind);
+        setErrorTitle(presentation.title);
+        setError(presentation.message);
       });
     return () => {
       active = false;
@@ -237,7 +355,10 @@ export function IdentityPortal({
         .getAccountExport(accountExport.id)
         .then(setAccountExport)
         .catch((reason: unknown) => {
-          setError(identityErrorMessage(reason));
+          const presentation = identityErrorPresentation(reason);
+          setErrorKind(presentation.kind);
+          setErrorTitle(presentation.title);
+          setError(presentation.message);
         });
     }, 5_000);
     return () => {
@@ -253,12 +374,7 @@ export function IdentityPortal({
   if (phase === 'loading') {
     return (
       <main className="identity-shell" id="main-content">
-        <div className="boot-state" role="status" aria-live="polite">
-          <span className="boot-state__mark" aria-hidden="true">
-            ■
-          </span>
-          正在验证安全会话…
-        </div>
+        <IdentityLoadingState />
       </main>
     );
   }
@@ -267,10 +383,14 @@ export function IdentityPortal({
     return (
       <main className="identity-shell identity-shell--auth" id="main-content">
         <AuthenticationPanel
+          {...(onExit === undefined ? {} : { onBack: onExit })}
           busy={busyAction !== null}
           error={error}
+          errorKind={errorKind}
+          errorTitle={errorTitle}
           mode={mode}
           notice={notice}
+          offline={offline}
           onLogin={(input) => {
             void perform('login', async () => {
               await client.loginPassword(input);
@@ -280,6 +400,8 @@ export function IdentityPortal({
           onModeChange={(nextMode) => {
             setMode(nextMode);
             setError(null);
+            setErrorKind('general');
+            setErrorTitle(null);
             setNotice(null);
           }}
           onOAuth={(provider: OAuthProvider) => {
@@ -346,7 +468,10 @@ export function IdentityPortal({
         busyAction={busyAction}
         devices={devices}
         error={error}
+        errorKind={errorKind}
+        errorTitle={errorTitle}
         notice={notice}
+        offline={offline}
         onCancelDeletion={() => {
           void perform('cancel-deletion', async () => {
             setAccountDeletion(await client.cancelAccountDeletion());
