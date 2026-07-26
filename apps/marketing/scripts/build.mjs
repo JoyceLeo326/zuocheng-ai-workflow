@@ -12,7 +12,6 @@ const localFiles = [
   'styles.css',
   'script.js',
   'planner.js',
-  'cost-policy.js',
   'assets/og-cover.jpg',
   'assets/og-cover.png',
   'assets/og-cover.svg',
@@ -24,7 +23,6 @@ const publicDocuments = [
   'content-system.md',
   'launch-playbook.md',
   'measurement.md',
-  'zero-owner-cost.md',
 ];
 
 await rm(outputRoot, { force: true, recursive: true });

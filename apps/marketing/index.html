@@ -36,7 +36,7 @@
       <a href="#materials">传播物料</a>
       <a href="#launch">上线计划</a>
     </nav>
-    <a class="nav-cta" href="#workbench">从第一课开始 <span>↘</span></a>
+    <a class="nav-cta" href="/app/">进入工作台 <span>↘</span></a>
     <button class="menu-button" type="button" aria-label="打开导航" aria-expanded="false" data-menu-button>
       <span></span><span></span>
     </button>
@@ -48,6 +48,7 @@
     <a href="#materials">传播物料</a>
     <a href="#launch">14 天上线</a>
     <a href="#measurement">增长与迭代</a>
+    <a href="/app/">进入工作台</a>
   </div>
 
   <main id="main">
@@ -61,24 +62,10 @@
             <p>先定截止时间与交付标准，再把每天推进到可勾选、可带走的结果。</p>
           </div>
           <aside class="local-rule-note">
-            <b>LOCAL / RULE-BASED</b>
-            <p>计划由浏览器本地规则生成，并非 AI 模型输出；你的输入与进度只保存在当前浏览器。</p>
+            <b>随写随存</b>
+            <p>填写后即可生成计划；完成状态会自动保留，也可以随时下载。</p>
           </aside>
         </header>
-
-        <aside class="cost-boundary" data-cost-boundary aria-labelledby="cost-boundary-title">
-          <div class="cost-boundary-title">
-            <span>成本与演示边界</span>
-            <strong id="cost-boundary-title">项目所有者固定成本 0 · 零自动账单</strong>
-          </div>
-          <div class="cost-boundary-facts">
-            <span><small>当前执行</small><b>核心能力全部在浏览器本地</b></span>
-            <span><small>成本状态</small><b data-cost-owner>本地 0 成本</b></span>
-            <span><small>远程服务</small><b data-cost-usage>用量不适用</b></span>
-            <span><small>公开性质</small><b>个人非商业作品演示</b></span>
-          </div>
-          <p>当前未连接远程 Provider；零成本模式会拒绝未来付费 Provider，并在免费额度耗尽或无法核实时关闭远程调用。</p>
-        </aside>
 
         <div class="launchpad-grid">
           <form class="task-form" data-task-form>
@@ -128,7 +115,7 @@
             <div class="task-plan-actions">
               <button type="button" data-export-plan disabled>下载 Markdown <span>↓</span></button>
               <button type="button" data-reset-task>重置当前任务</button>
-              <small>完成状态会实时保存在当前浏览器。</small>
+              <small>计划按规则生成，不含 AI 内容建议；完成状态会自动保存。</small>
             </div>
           </section>
         </div>
@@ -136,15 +123,15 @@
 
       <div class="hero-copy reveal">
         <aside class="authenticity-notice" aria-labelledby="authenticity-title">
-          <p class="authenticity-status">项目状态</p>
-          <h2 id="authenticity-title">个人作品案例 · 教学演示</h2>
-          <p>本页用于展示课程产品与交互方案。页面中的问卷、访谈、反馈与漏斗数字均为方案设计与教学演示，不代表真实用户数据或既有运营成绩。</p>
+          <p class="authenticity-status">产品说明</p>
+          <h2 id="authenticity-title">独立作品 · 可直接使用</h2>
+          <p>任务启动台与课程路径可直接体验；课程反馈与运营数字仅用于说明功能，不计入真实统计。</p>
         </aside>
         <p class="hero-kicker"><span class="live-dot"></span> 面向大学生真实任务的 AI 学习工作流</p>
         <h2 class="hero-statement"><span class="hero-line-dark">别再收藏工具，</span><span class="hero-line-blue">先做成一件事。</span></h2>
         <p class="hero-lead">不从模型参数讲起。从你下周要交的汇报、调研、答辩开始，把模糊任务压成能检查、能提交的结果。</p>
         <div class="hero-actions">
-          <a class="button button-dark" href="#workbench">把 25 页资料做成 3 页汇报 <span>→</span></a>
+          <a class="button button-dark" href="/app/">把 25 页资料做成 3 页汇报 <span>→</span></a>
           <a class="text-link" href="#path">先看 7 天怎么走 <span>↓</span></a>
           <a class="text-link" href="assets/做成-AI学习工作流.pdf" download>下载课程手册 <span>↓</span></a>
         </div>
@@ -606,7 +593,7 @@
       <div class="final-symbol" aria-hidden="true"><span>□</span><i>→</i><b>■</b></div>
       <h2>下一项任务，<br>别只停在“等会儿做”。</h2>
       <p>带着一份真实资料进入第一课，今天先完成任务定义卡。</p>
-      <a class="button button-green" href="#workbench">现在开始第一课 <span>↗</span></a>
+      <a class="button button-green" href="/app/">现在开始第一课 <span>↗</span></a>
       <div class="final-note"><span>无需先学工具</span><span>35 分钟完成第一步</span><span>结果可带走</span></div>
     </section>
   </main>
@@ -619,7 +606,6 @@
   </footer>
 
   <div class="toast" role="status" aria-live="polite" data-toast>已复制</div>
-  <script src="cost-policy.js"></script>
   <script src="planner.js"></script>
   <script src="script.js"></script>
 </body>
