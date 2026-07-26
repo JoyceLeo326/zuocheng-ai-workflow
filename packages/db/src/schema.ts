@@ -1,5 +1,7 @@
 import { sql } from 'drizzle-orm';
 import {
+  bigint,
+  boolean,
   char,
   check,
   foreignKey,
@@ -11,11 +13,14 @@ import {
   text,
   timestamp,
   unique,
+  uniqueIndex,
   uuid,
   varchar,
 } from 'drizzle-orm/pg-core';
 
 export const zuochengSchema = pgSchema('zuocheng');
+
+export const BETTER_AUTH_SCHEMA_VERSION = '1.6.25' as const;
 
 export const PROJECT_DELETION_STATUS_BY_REQUEST_STATUS = Object.freeze({
   pending: 'purge_pending',
@@ -64,6 +69,13 @@ export const user = zuochengSchema
       id: uuidV7('id').primaryKey(),
       email: varchar('email', { length: 320 }).notNull(),
       displayName: varchar('display_name', { length: 200 }).notNull(),
+      emailVerified: boolean('email_verified').notNull().default(false),
+      image: text('image'),
+      accountStatus: text('account_status').notNull().default('active'),
+      activeTenantId: uuid('active_tenant_id'),
+      statusChangedAt: timestamp('status_changed_at', { withTimezone: true })
+        .notNull()
+        .defaultNow(),
       version: optimisticVersion(),
       createdAt: createdAt(),
       updatedAt: updatedAt(),
@@ -74,6 +86,19 @@ export const user = zuochengSchema
       check('user_email_normalized', sql`${table.email} = lower(btrim(${table.email}))`),
       check('user_email_shape', sql`${table.email} ~ '^[^[:space:]@]+@[^[:space:]@]+$'`),
       check('user_display_name_nonempty', sql`btrim(${table.displayName}) <> ''`),
+      check(
+        'user_account_status_valid',
+        sql`${table.accountStatus} IN ('active', 'suspended', 'deletion_pending', 'deleted')`,
+      ),
+      check(
+        'user_deletion_state_valid',
+        sql`(${table.accountStatus} = 'deleted') = (${table.deletedAt} IS NOT NULL)`,
+      ),
+      foreignKey({
+        name: 'user_active_tenant_fk',
+        columns: [table.activeTenantId],
+        foreignColumns: [tenant.id],
+      }).onDelete('restrict'),
       check('user_version_positive', sql`${table.version} > 0`),
     ],
   )
@@ -511,6 +536,451 @@ export const deletionRequest = zuochengSchema
   )
   .enableRLS();
 
+export const account = zuochengSchema
+  .table(
+    'account',
+    {
+      id: uuidV7('id').primaryKey(),
+      userId: uuid('user_id').notNull(),
+      accountId: varchar('account_id', { length: 512 }).notNull(),
+      providerId: varchar('provider_id', { length: 128 }).notNull(),
+      accessToken: text('access_token_ciphertext'),
+      refreshToken: text('refresh_token_ciphertext'),
+      accessTokenExpiresAt: timestamp('access_token_expires_at', { withTimezone: true }),
+      refreshTokenExpiresAt: timestamp('refresh_token_expires_at', { withTimezone: true }),
+      scope: text('scope'),
+      idToken: text('id_token_ciphertext'),
+      tokenTenantId: uuid('token_tenant_id'),
+      tokenKeyVersion: integer('token_key_version'),
+      tokenAadHash: char('token_aad_hash', { length: 64 }),
+      password: text('password_hash'),
+      revokedAt: timestamp('revoked_at', { withTimezone: true }),
+      createdAt: createdAt(),
+      updatedAt: updatedAt(),
+    },
+    (table) => [
+      unique('account_provider_account_unique').on(table.providerId, table.accountId),
+      foreignKey({
+        name: 'account_user_fk',
+        columns: [table.userId],
+        foreignColumns: [user.id],
+      }).onDelete('restrict'),
+      foreignKey({
+        name: 'account_token_membership_fk',
+        columns: [table.tokenTenantId, table.userId],
+        foreignColumns: [membership.tenantId, membership.userId],
+      }).onDelete('restrict'),
+      check('account_provider_id_nonempty', sql`btrim(${table.providerId}) <> ''`),
+      check('account_account_id_nonempty', sql`btrim(${table.accountId}) <> ''`),
+      check(
+        'account_credential_shape_valid',
+        sql`(
+          (
+            ${table.providerId} = 'credential'
+            AND ${table.accountId} = ${table.userId}::text
+            AND ${table.password} IS NOT NULL
+            AND btrim(${table.password}) <> ''
+            AND ${table.accessToken} IS NULL
+            AND ${table.refreshToken} IS NULL
+            AND ${table.idToken} IS NULL
+            AND ${table.tokenTenantId} IS NULL
+            AND ${table.tokenKeyVersion} IS NULL
+            AND ${table.tokenAadHash} IS NULL
+          )
+          OR (${table.providerId} <> 'credential' AND ${table.password} IS NULL)
+        )`,
+      ),
+      check(
+        'account_token_bundle_valid',
+        sql`(
+          (
+            ${table.accessToken} IS NULL
+            AND ${table.refreshToken} IS NULL
+            AND ${table.idToken} IS NULL
+            AND ${table.tokenTenantId} IS NULL
+            AND ${table.tokenKeyVersion} IS NULL
+            AND ${table.tokenAadHash} IS NULL
+          )
+          OR (
+            (${table.accessToken} IS NOT NULL OR ${table.refreshToken} IS NOT NULL OR ${table.idToken} IS NOT NULL)
+            AND ${table.providerId} <> 'credential'
+            AND ${table.tokenTenantId} IS NOT NULL
+            AND ${table.tokenKeyVersion} IS NOT NULL
+            AND ${table.tokenAadHash} IS NOT NULL
+          )
+        )`,
+      ),
+      check(
+        'account_token_ciphertext_valid',
+        sql`(
+          (${table.accessToken} IS NULL OR ${table.accessToken} ~ ('^\\$ba\\$' || ${table.tokenKeyVersion}::text || '\\$([0-9a-f]{2})+$'))
+          AND (${table.refreshToken} IS NULL OR ${table.refreshToken} ~ ('^\\$ba\\$' || ${table.tokenKeyVersion}::text || '\\$([0-9a-f]{2})+$'))
+          AND (${table.idToken} IS NULL OR ${table.idToken} ~ ('^\\$ba\\$' || ${table.tokenKeyVersion}::text || '\\$([0-9a-f]{2})+$'))
+        )`,
+      ),
+      check(
+        'account_token_aad_valid',
+        sql`(
+          (${table.tokenKeyVersion} IS NULL OR ${table.tokenKeyVersion} > 0)
+          AND (${table.tokenAadHash} IS NULL OR ${table.tokenAadHash} ~ '^[0-9a-f]{64}$')
+        )`,
+      ),
+      check(
+        'account_token_expiry_valid',
+        sql`(
+          (${table.accessTokenExpiresAt} IS NULL OR ${table.accessToken} IS NOT NULL)
+          AND (${table.refreshTokenExpiresAt} IS NULL OR ${table.refreshToken} IS NOT NULL)
+        )`,
+      ),
+      index('account_user_idx').on(table.userId),
+      index('account_provider_user_idx').on(table.providerId, table.userId),
+    ],
+  )
+  .enableRLS();
+
+export const session = zuochengSchema
+  .table(
+    'session',
+    {
+      id: uuidV7('id').primaryKey(),
+      userId: uuid('user_id').notNull(),
+      token: char('token_hash', { length: 64 }).notNull(),
+      expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+      ipAddress: char('ip_address_hash', { length: 64 }),
+      userAgent: text('user_agent'),
+      activeTenantId: uuid('active_tenant_id'),
+      accountStatusSnapshot: text('account_status_snapshot').notNull().default('active'),
+      deviceIdHash: char('device_id_hash', { length: 64 }),
+      deviceName: varchar('device_name', { length: 200 }),
+      deviceType: varchar('device_type', { length: 80 }),
+      lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
+      revokedAt: timestamp('revoked_at', { withTimezone: true }),
+      revocationReason: varchar('revocation_reason', { length: 160 }),
+      createdAt: createdAt(),
+      updatedAt: updatedAt(),
+    },
+    (table) => [
+      unique('session_token_hash_unique').on(table.token),
+      foreignKey({
+        name: 'session_user_fk',
+        columns: [table.userId],
+        foreignColumns: [user.id],
+      }).onDelete('restrict'),
+      foreignKey({
+        name: 'session_active_tenant_fk',
+        columns: [table.activeTenantId],
+        foreignColumns: [tenant.id],
+      }).onDelete('restrict'),
+      foreignKey({
+        name: 'session_active_membership_fk',
+        columns: [table.activeTenantId, table.userId],
+        foreignColumns: [membership.tenantId, membership.userId],
+      }).onDelete('restrict'),
+      check('session_token_hash_valid', sql`${table.token} ~ '^[0-9a-f]{64}$'`),
+      check(
+        'session_ip_address_hash_valid',
+        sql`${table.ipAddress} IS NULL OR ${table.ipAddress} ~ '^[0-9a-f]{64}$'`,
+      ),
+      check(
+        'session_device_id_hash_valid',
+        sql`${table.deviceIdHash} IS NULL OR ${table.deviceIdHash} ~ '^[0-9a-f]{64}$'`,
+      ),
+      check(
+        'session_account_status_valid',
+        sql`${table.accountStatusSnapshot} IN ('active', 'suspended', 'deletion_pending', 'deleted')`,
+      ),
+      check('session_expiry_valid', sql`isfinite(${table.expiresAt})`),
+      check(
+        'session_revocation_valid',
+        sql`(${table.revokedAt} IS NULL) = (${table.revocationReason} IS NULL)`,
+      ),
+      index('session_user_expiry_idx').on(table.userId, table.expiresAt),
+      index('session_active_tenant_user_idx').on(table.activeTenantId, table.userId),
+      index('session_device_idx').on(table.userId, table.deviceIdHash),
+    ],
+  )
+  .enableRLS();
+
+export const verification = zuochengSchema
+  .table(
+    'verification',
+    {
+      id: uuidV7('id').primaryKey(),
+      userId: uuid('user_id'),
+      tenantId: uuid('tenant_id'),
+      purpose: varchar('purpose', { length: 80 }).notNull().default('generic'),
+      providerId: varchar('provider_id', { length: 128 }),
+      identifier: varchar('identifier_hash', { length: 64 }).notNull(),
+      value: text('subject_value'),
+      stateCiphertext: text('state_ciphertext'),
+      ciphertextKeyVersion: integer('ciphertext_key_version'),
+      ciphertextAadHash: char('ciphertext_aad_hash', { length: 64 }),
+      expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+      consumedAt: timestamp('consumed_at', { withTimezone: true }),
+      revokedAt: timestamp('revoked_at', { withTimezone: true }),
+      attempts: integer('attempts').notNull().default(0),
+      maxAttempts: integer('max_attempts').notNull().default(5),
+      createdAt: createdAt(),
+      updatedAt: updatedAt(),
+    },
+    (table) => [
+      unique('verification_identifier_hash_unique').on(table.identifier),
+      foreignKey({
+        name: 'verification_user_fk',
+        columns: [table.userId],
+        foreignColumns: [user.id],
+      }).onDelete('restrict'),
+      foreignKey({
+        name: 'verification_tenant_fk',
+        columns: [table.tenantId],
+        foreignColumns: [tenant.id],
+      }).onDelete('restrict'),
+      foreignKey({
+        name: 'verification_tenant_membership_fk',
+        columns: [table.tenantId, table.userId],
+        foreignColumns: [membership.tenantId, membership.userId],
+      }).onDelete('restrict'),
+      check(
+        'verification_purpose_valid',
+        sql`${table.purpose} IN (
+          'generic', 'email_verification', 'password_reset', 'oauth_state',
+          'webauthn_challenge', 'account_deletion', 'recent_auth'
+        )`,
+      ),
+      check(
+        'verification_identifier_hash_valid',
+        sql`${table.identifier} ~ '^[A-Za-z0-9_-]{43}$'`,
+      ),
+      check(
+        'verification_payload_storage_valid',
+        sql`(
+          (
+            ${table.purpose} = 'oauth_state'
+            AND ${table.value} IS NULL
+            AND ${table.stateCiphertext} IS NOT NULL
+            AND ${table.providerId} IS NOT NULL
+            AND btrim(${table.providerId}) <> ''
+            AND ${table.ciphertextKeyVersion} IS NOT NULL
+            AND ${table.ciphertextAadHash} IS NOT NULL
+            AND (
+              (${table.userId} IS NULL AND ${table.tenantId} IS NULL)
+              OR (${table.userId} IS NOT NULL AND ${table.tenantId} IS NOT NULL)
+            )
+          )
+          OR (
+            ${table.purpose} <> 'oauth_state'
+            AND ${table.value} IS NOT NULL
+            AND btrim(${table.value}) <> ''
+            AND left(ltrim(${table.value}), 1) NOT IN ('{', '[')
+            AND ${table.stateCiphertext} IS NULL
+            AND ${table.providerId} IS NULL
+            AND ${table.ciphertextKeyVersion} IS NULL
+            AND ${table.ciphertextAadHash} IS NULL
+          )
+        )`,
+      ),
+      check(
+        'verification_state_ciphertext_valid',
+        sql`${table.stateCiphertext} IS NULL
+          OR ${table.stateCiphertext} ~ ('^\\$ba\\$' || ${table.ciphertextKeyVersion}::text || '\\$([0-9a-f]{2})+$')`,
+      ),
+      check(
+        'verification_state_aad_valid',
+        sql`(
+          (${table.ciphertextKeyVersion} IS NULL OR ${table.ciphertextKeyVersion} > 0)
+          AND (
+            ${table.ciphertextAadHash} IS NULL
+            OR ${table.ciphertextAadHash} ~ '^[0-9a-f]{64}$'
+          )
+        )`,
+      ),
+      check('verification_expiry_valid', sql`${table.expiresAt} > ${table.createdAt}`),
+      check(
+        'verification_attempts_valid',
+        sql`${table.attempts} >= 0 AND ${table.maxAttempts} > 0 AND ${table.attempts} <= ${table.maxAttempts}`,
+      ),
+      check(
+        'verification_terminal_state_valid',
+        sql`NOT (${table.consumedAt} IS NOT NULL AND ${table.revokedAt} IS NOT NULL)`,
+      ),
+      index('verification_user_purpose_idx').on(table.userId, table.purpose),
+      index('verification_expiry_idx').on(table.expiresAt),
+    ],
+  )
+  .enableRLS();
+
+export const passkey = zuochengSchema
+  .table(
+    'passkey',
+    {
+      id: uuidV7('id').primaryKey(),
+      name: varchar('name', { length: 200 }),
+      publicKey: text('public_key').notNull(),
+      userId: uuid('user_id').notNull(),
+      credentialId: varchar('credential_id', { length: 1024 }).notNull(),
+      counter: bigint('counter', { mode: 'number' }).notNull().default(0),
+      deviceType: varchar('device_type', { length: 32 }).notNull(),
+      backedUp: boolean('backed_up').notNull().default(false),
+      transports: text('transports'),
+      createdAt: createdAt(),
+      updatedAt: updatedAt(),
+      aaguid: varchar('aaguid', { length: 36 }),
+      lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+      revokedAt: timestamp('revoked_at', { withTimezone: true }),
+      revocationReason: varchar('revocation_reason', { length: 160 }),
+    },
+    (table) => [
+      unique('passkey_credential_id_unique').on(table.credentialId),
+      foreignKey({
+        name: 'passkey_user_fk',
+        columns: [table.userId],
+        foreignColumns: [user.id],
+      }).onDelete('restrict'),
+      check('passkey_public_key_nonempty', sql`btrim(${table.publicKey}) <> ''`),
+      check('passkey_credential_id_nonempty', sql`btrim(${table.credentialId}) <> ''`),
+      check('passkey_counter_nonnegative', sql`${table.counter} >= 0`),
+      check(
+        'passkey_device_type_valid',
+        sql`${table.deviceType} IN ('singleDevice', 'multiDevice')`,
+      ),
+      check(
+        'passkey_aaguid_valid',
+        sql`${table.aaguid} IS NULL OR ${table.aaguid} ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'`,
+      ),
+      check(
+        'passkey_revocation_valid',
+        sql`(${table.revokedAt} IS NULL) = (${table.revocationReason} IS NULL)`,
+      ),
+      index('passkey_user_idx').on(table.userId),
+    ],
+  )
+  .enableRLS();
+
+export const identityAuditEvent = zuochengSchema
+  .table(
+    'identity_audit_event',
+    {
+      id: uuidV7('id').primaryKey(),
+      userId: uuid('user_id'),
+      tenantId: uuid('tenant_id'),
+      sessionId: uuid('session_id'),
+      eventType: varchar('event_type', { length: 160 }).notNull(),
+      requestId: uuid('request_id'),
+      ipAddressHash: char('ip_address_hash', { length: 64 }),
+      payload: jsonb('payload').$type<Record<string, unknown>>().notNull().default({}),
+      occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull().defaultNow(),
+      createdAt: createdAt(),
+    },
+    (table) => [
+      foreignKey({
+        name: 'identity_audit_event_user_fk',
+        columns: [table.userId],
+        foreignColumns: [user.id],
+      }).onDelete('restrict'),
+      foreignKey({
+        name: 'identity_audit_event_tenant_fk',
+        columns: [table.tenantId],
+        foreignColumns: [tenant.id],
+      }).onDelete('restrict'),
+      foreignKey({
+        name: 'identity_audit_event_session_fk',
+        columns: [table.sessionId],
+        foreignColumns: [session.id],
+      }).onDelete('restrict'),
+      check('identity_audit_event_type_nonempty', sql`btrim(${table.eventType}) <> ''`),
+      check(
+        'identity_audit_event_ip_hash_valid',
+        sql`${table.ipAddressHash} IS NULL OR ${table.ipAddressHash} ~ '^[0-9a-f]{64}$'`,
+      ),
+      index('identity_audit_event_user_occurred_idx').on(table.userId, table.occurredAt),
+      index('identity_audit_event_tenant_occurred_idx').on(table.tenantId, table.occurredAt),
+    ],
+  )
+  .enableRLS();
+
+export const accountDeletionRequest = zuochengSchema
+  .table(
+    'account_deletion_request',
+    {
+      id: uuidV7('id').primaryKey(),
+      userId: uuid('user_id').notNull(),
+      requestedBySessionId: uuid('requested_by_session_id'),
+      confirmationToken: char('confirmation_token_hash', { length: 64 }).notNull(),
+      status: text('status').notNull().default('pending_confirmation'),
+      exportStatus: text('export_status').notNull().default('not_requested'),
+      reason: text('reason'),
+      requestedAt: timestamp('requested_at', { withTimezone: true }).notNull().defaultNow(),
+      confirmationExpiresAt: timestamp('confirmation_expires_at', { withTimezone: true })
+        .notNull()
+        .default(sql`now() + interval '1 hour'`),
+      confirmedAt: timestamp('confirmed_at', { withTimezone: true }),
+      scheduledFor: timestamp('scheduled_for', { withTimezone: true }).notNull(),
+      completedAt: timestamp('completed_at', { withTimezone: true }),
+      cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+      createdAt: createdAt(),
+      updatedAt: updatedAt(),
+    },
+    (table) => [
+      unique('account_deletion_request_confirmation_token_unique').on(table.confirmationToken),
+      uniqueIndex('account_deletion_request_active_user_unique')
+        .on(table.userId)
+        .where(
+          sql`${table.status} IN ('pending_confirmation', 'pending', 'processing')`,
+        ),
+      foreignKey({
+        name: 'account_deletion_request_user_fk',
+        columns: [table.userId],
+        foreignColumns: [user.id],
+      }).onDelete('restrict'),
+      foreignKey({
+        name: 'account_deletion_request_session_fk',
+        columns: [table.requestedBySessionId],
+        foreignColumns: [session.id],
+      }).onDelete('restrict'),
+      check(
+        'account_deletion_request_confirmation_hash_valid',
+        sql`${table.confirmationToken} ~ '^[0-9a-f]{64}$'`,
+      ),
+      check(
+        'account_deletion_request_status_valid',
+        sql`${table.status} IN ('pending_confirmation', 'pending', 'processing', 'completed', 'cancelled', 'rejected')`,
+      ),
+      check(
+        'account_deletion_request_export_status_valid',
+        sql`${table.exportStatus} IN ('not_requested', 'requested', 'ready', 'failed')`,
+      ),
+      check(
+        'account_deletion_request_schedule_valid',
+        sql`${table.scheduledFor} >= ${table.requestedAt}
+          AND ${table.confirmationExpiresAt} > ${table.requestedAt}`,
+      ),
+      check(
+        'account_deletion_request_lifecycle_valid',
+        sql`(
+          ((${table.status} = 'completed') = (${table.completedAt} IS NOT NULL))
+          AND ((${table.status} IN ('cancelled', 'rejected')) = (${table.cancelledAt} IS NOT NULL))
+          AND NOT (${table.completedAt} IS NOT NULL AND ${table.cancelledAt} IS NOT NULL)
+          AND (
+            (${table.status} = 'pending_confirmation' AND ${table.confirmedAt} IS NULL)
+            OR (${table.status} IN ('pending', 'processing', 'completed') AND ${table.confirmedAt} IS NOT NULL)
+            OR ${table.status} IN ('cancelled', 'rejected')
+          )
+        )`,
+      ),
+      index('account_deletion_request_status_idx').on(table.status, table.scheduledFor),
+    ],
+  )
+  .enableRLS();
+
+export const identityTables = [
+  account,
+  session,
+  verification,
+  passkey,
+  identityAuditEvent,
+  accountDeletionRequest,
+] as const;
+
 export const tenantScopedTables = [
   membership,
   project,
@@ -533,3 +1003,15 @@ export type Project = typeof project.$inferSelect;
 export type NewProject = typeof project.$inferInsert;
 export type ProjectVersion = typeof projectVersion.$inferSelect;
 export type NewProjectVersion = typeof projectVersion.$inferInsert;
+export type Account = typeof account.$inferSelect;
+export type NewAccount = typeof account.$inferInsert;
+export type Session = typeof session.$inferSelect;
+export type NewSession = typeof session.$inferInsert;
+export type Verification = typeof verification.$inferSelect;
+export type NewVerification = typeof verification.$inferInsert;
+export type Passkey = typeof passkey.$inferSelect;
+export type NewPasskey = typeof passkey.$inferInsert;
+export type IdentityAuditEvent = typeof identityAuditEvent.$inferSelect;
+export type NewIdentityAuditEvent = typeof identityAuditEvent.$inferInsert;
+export type AccountDeletionRequest = typeof accountDeletionRequest.$inferSelect;
+export type NewAccountDeletionRequest = typeof accountDeletionRequest.$inferInsert;
