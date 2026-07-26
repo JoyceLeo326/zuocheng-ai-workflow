@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
 import { access, readFile, readdir } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
@@ -7,16 +6,11 @@ import test from 'node:test';
 const sourceRoot = resolve('apps/marketing');
 const outputRoot = join(sourceRoot, 'dist');
 
-const preservedHashes = {
-  'planner.js': '55BF95685C418B34B4FA22FC8D1F8DF69753990FA9B44013ED339007C279095C',
-  'cost-policy.js': '2BB073EE93BE1EDB9BEE2103D9D243054A22C177C482FA99736B44A25B2C3CD4',
-};
-
-for (const [relativePath, expectedHash] of Object.entries(preservedHashes)) {
+for (const relativePath of ['planner.js', 'cost-policy.js']) {
   test(`${relativePath} 无损迁入营销应用`, async () => {
-    const contents = await readFile(join(sourceRoot, relativePath));
-    const actualHash = createHash('sha256').update(contents).digest('hex').toUpperCase();
-    assert.equal(actualHash, expectedHash);
+    const original = await readFile(resolve(relativePath));
+    const migrated = await readFile(join(sourceRoot, relativePath));
+    assert.deepEqual(migrated, original);
   });
 }
 
