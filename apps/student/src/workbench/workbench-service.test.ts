@@ -225,6 +225,51 @@ function authoredDraftPage(
   };
 }
 
+async function serviceWithVerifiedDraft(): Promise<{
+  store: MemoryProjectStore;
+  service: WorkbenchProjectLifecycleService;
+  projectId: string;
+  sourceFileId: string;
+  evidenceId: string;
+  outlineId: string;
+  artifactId: string;
+}> {
+  const {
+    store,
+    service,
+    projectId,
+    evidenceId,
+    outlineId,
+    outlineNodeId,
+    rubricCriterionIds,
+  } = await serviceWithSelectedOutline();
+  const selected = await store.getProject(projectId);
+  if (selected === null || selected.sourceFiles[0] === undefined) {
+    throw new Error('expected selected project source');
+  }
+  const sourceFileId = selected.sourceFiles[0].id;
+  const withArtifact = await service.ensureDraftArtifact(
+    projectId,
+    outlineId,
+  );
+  const artifactId = withArtifact.artifacts[0]!.id;
+  await service.insertDraftPage(projectId, artifactId, {
+    outlineNodeId,
+    index: 0,
+    page: authoredDraftPage(evidenceId, rubricCriterionIds),
+  });
+  await service.verifyDraftArtifact(projectId, artifactId);
+  return {
+    store,
+    service,
+    projectId,
+    sourceFileId,
+    evidenceId,
+    outlineId,
+    artifactId,
+  };
+}
+
 describe('WorkbenchService first-stage orchestration', () => {
   it('creates and persists a strict versioned project from UI-ready task input', async () => {
     const store = new MemoryProjectStore();
@@ -618,6 +663,271 @@ describe('WorkbenchService first-stage orchestration', () => {
         await store.getSourceBlob(initial.id, failed.sourceFile.id)
       )?.text()
     ).toBe('%PDF-damaged');
+  });
+
+  it('retries a failed material from its persisted blob without creating a fake duplicate', async () => {
+    const store = new MemoryProjectStore();
+    let parserCalls = 0;
+    const parser: PdfParserPort = {
+      async parsePdf() {
+        parserCalls += 1;
+        if (parserCalls === 1) {
+          throw new SourceParserPortError('CORRUPT_PDF');
+        }
+        return {
+          pageCount: 1,
+          pages: [{ pageNumber: 1, text: 'Recovered source text' }],
+        };
+      },
+    };
+    const service = createWorkbenchService({
+      store,
+      pdfParser: parser,
+      idFactory: sequentialIds(),
+      now: () => new Date('2026-07-27T01:00:00.000Z'),
+    });
+    const initial = await service.createProject(form());
+    const failed = await service.ingestSourceFile(
+      initial.id,
+      pdfFile('%PDF-retry'),
+    );
+    if (failed.status !== 'failed') {
+      throw new Error('expected failed ingestion');
+    }
+
+    const retried = await service.retrySourceFile(
+      initial.id,
+      failed.sourceFile.id,
+    );
+
+    expect(retried.status).toBe('ready');
+    if (retried.status !== 'ready') {
+      throw new Error('expected ready retry');
+    }
+    expect(parserCalls).toBe(2);
+    expect(retried.project.sourceFiles).toHaveLength(1);
+    expect(retried.sourceFile).toMatchObject({
+      id: failed.sourceFile.id,
+      sourceVersion: 2,
+      status: 'ready',
+      parseProgress: 100,
+      pageCount: 1,
+      error: null,
+    });
+    expect(retried.chunks).toEqual([
+      expect.objectContaining({
+        sourceFileId: failed.sourceFile.id,
+        sourceFileVersion: 2,
+        text: 'Recovered source text',
+      }),
+    ]);
+  });
+
+  it('replaces a material with a newly ingested file and retains an explicit replacement link', async () => {
+    const store = new MemoryProjectStore();
+    const parser: PdfParserPort = {
+      async parsePdf({ file }) {
+        return {
+          pageCount: 1,
+          pages: [
+            {
+              pageNumber: 1,
+              text: await file.text(),
+            },
+          ],
+        };
+      },
+    };
+    const service = createWorkbenchService({
+      store,
+      pdfParser: parser,
+      idFactory: sequentialIds(),
+      now: () => new Date('2026-07-27T01:00:00.000Z'),
+    });
+    const initial = await service.createProject(form());
+    const first = await service.ingestSourceFile(
+      initial.id,
+      pdfFile('%PDF-original'),
+    );
+    if (first.status !== 'ready') {
+      throw new Error('expected first source');
+    }
+    const replacement = new File(
+      ['%PDF-replacement'],
+      'replacement.pdf',
+      { type: 'application/pdf' },
+    );
+
+    const replaced = await service.replaceSourceFile(
+      initial.id,
+      first.sourceFile.id,
+      replacement,
+    );
+
+    expect(replaced.status).toBe('ready');
+    if (replaced.status !== 'ready') {
+      throw new Error('expected ready replacement');
+    }
+    expect(replaced.project.sourceFiles).toHaveLength(2);
+    expect(
+      replaced.project.sourceFiles.find(
+        (source) => source.id === first.sourceFile.id,
+      ),
+    ).toMatchObject({
+      status: 'replaced',
+      replacedByFileId: replaced.sourceFile.id,
+    });
+    expect(replaced.sourceFile).toMatchObject({
+      fileName: 'replacement.pdf',
+      status: 'ready',
+    });
+    expect(replaced.chunks[0]?.text).toBe('%PDF-replacement');
+  });
+
+  it('deletes an unused material and its chunks', async () => {
+    const store = new MemoryProjectStore();
+    const parser: PdfParserPort = {
+      async parsePdf() {
+        return {
+          pageCount: 1,
+          pages: [{ pageNumber: 1, text: 'Evidence source' }],
+        };
+      },
+    };
+    const service = createWorkbenchService({
+      store,
+      pdfParser: parser,
+      idFactory: sequentialIds(),
+      now: () => new Date('2026-07-27T01:00:00.000Z'),
+    });
+    const initial = await service.createProject(form());
+    const ingested = await service.ingestSourceFile(
+      initial.id,
+      pdfFile('%PDF-delete'),
+    );
+    if (ingested.status !== 'ready') {
+      throw new Error('expected ready source');
+    }
+
+    const deleted = await service.deleteSourceFile(
+      initial.id,
+      ingested.sourceFile.id,
+    );
+
+    expect(deleted.sourceFiles).toEqual([]);
+    expect(deleted.sourceChunks).toEqual([]);
+    await expect(store.getProject(initial.id)).resolves.toEqual(
+      deleted,
+    );
+  });
+
+  it('stales affected evidence and downstream work when replacing a material', async () => {
+    const {
+      service,
+      projectId,
+      sourceFileId,
+      evidenceId,
+      outlineId,
+      artifactId,
+    } = await serviceWithVerifiedDraft();
+
+    const result = await service.replaceSourceFile(
+      projectId,
+      sourceFileId,
+      new File(['%PDF-replacement'], 'replacement.pdf', {
+        type: 'application/pdf',
+      }),
+    );
+    if (result.status !== 'ready') {
+      throw new Error('expected ready replacement');
+    }
+
+    expect(
+      result.project.evidenceCards.find(
+        (evidence) => evidence.id === evidenceId,
+      ),
+    ).toMatchObject({
+      status: 'selected',
+      confirmationStatus: 'pending',
+      userConfirmedAt: null,
+    });
+    expect(
+      result.project.outlines.find(
+        (outline) => outline.id === outlineId,
+      ),
+    ).toMatchObject({
+      status: 'draft',
+      lockedAt: null,
+    });
+    expect(result.project.activeOutlineId).toBeNull();
+    expect(
+      result.project.artifacts.find(
+        (artifact) => artifact.id === artifactId,
+      ),
+    ).toMatchObject({
+      status: 'stale',
+      staleBecause: ['SOURCE_REPLACED'],
+    });
+    expect(result.project.verificationResults[0]).toMatchObject({
+      status: 'stale',
+    });
+  });
+
+  it('deletes the source blob and stales downstream work when deleting a used material', async () => {
+    const {
+      store,
+      service,
+      projectId,
+      sourceFileId,
+      evidenceId,
+      outlineId,
+      artifactId,
+    } = await serviceWithVerifiedDraft();
+    const deleteBlob = vi.spyOn(store, 'deleteSourceBlob');
+
+    const deleted = await service.deleteSourceFile(
+      projectId,
+      sourceFileId,
+    );
+
+    expect(deleteBlob).toHaveBeenCalledWith(
+      projectId,
+      sourceFileId,
+    );
+    expect(deleted.sourceFiles).toEqual([]);
+    expect(deleted.sourceChunks).toEqual([]);
+    expect(deleted.evidenceCards).toEqual([]);
+    expect(
+      deleted.outlines.find(
+        (outline) => outline.id === outlineId,
+      ),
+    ).toMatchObject({
+      status: 'draft',
+      lockedAt: null,
+      nodes: [
+        expect.objectContaining({
+          evidenceCardIds: [],
+          locked: false,
+        }),
+      ],
+    });
+    expect(deleted.activeOutlineId).toBeNull();
+    expect(
+      deleted.artifacts.find(
+        (artifact) => artifact.id === artifactId,
+      ),
+    ).toMatchObject({
+      status: 'stale',
+      staleBecause: ['SOURCE_DELETED'],
+    });
+    expect(deleted.verificationResults[0]).toMatchObject({
+      status: 'stale',
+      checks: expect.arrayContaining([
+        expect.objectContaining({
+          evidenceCardIds: expect.not.arrayContaining([evidenceId]),
+        }),
+      ]),
+    });
   });
 
   it('ingests real browser-decoded text and preserves an image as OCR-required', async () => {

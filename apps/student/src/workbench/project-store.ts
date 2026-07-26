@@ -71,6 +71,10 @@ export interface ProjectStore {
     projectId: EntityId,
     sourceFileId: EntityId,
   ): Promise<Blob | null>;
+  deleteSourceBlob(
+    projectId: EntityId,
+    sourceFileId: EntityId,
+  ): Promise<void>;
   replaceSourceChunks(
     projectId: EntityId,
     sourceFileId: EntityId,
@@ -868,6 +872,16 @@ export class MemoryProjectStore implements ProjectStore {
     return blob === undefined ? null : clone(blob);
   }
 
+  async deleteSourceBlob(
+    projectId: EntityId,
+    sourceFileId: EntityId,
+  ): Promise<void> {
+    await this.#requireProject(projectId);
+    this.#database.sourceBlobs.delete(
+      blobKey(projectId, sourceFileId),
+    );
+  }
+
   async replaceSourceChunks(
     projectId: EntityId,
     sourceFileId: EntityId,
@@ -1412,6 +1426,25 @@ export class IndexedDbProjectStore implements ProjectStore {
     )) as StoredBlob | undefined;
     await transactionDone(transaction);
     return value === undefined ? null : clone(value.blob);
+  }
+
+  async deleteSourceBlob(
+    projectId: EntityId,
+    sourceFileId: EntityId,
+  ): Promise<void> {
+    const database = await this.#database();
+    const transaction = database.transaction(
+      [PROJECTS_STORE, BLOBS_STORE],
+      'readwrite',
+    );
+    await this.#projectInTransaction(
+      transaction,
+      projectId,
+    );
+    transaction
+      .objectStore(BLOBS_STORE)
+      .delete(blobKey(projectId, sourceFileId));
+    await transactionDone(transaction);
   }
 
   async replaceSourceChunks(

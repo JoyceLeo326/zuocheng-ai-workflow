@@ -18,6 +18,7 @@ import {
 } from './project-model.js';
 import {
   ProjectNotFoundError,
+  type ProjectExportBundle,
   type ProjectStore,
 } from './project-store.js';
 import {
@@ -297,6 +298,19 @@ export interface WorkbenchService {
     projectId: string,
     file: File,
   ): Promise<SourceIngestionResult>;
+  retrySourceFile(
+    projectId: string,
+    sourceFileId: string,
+  ): Promise<SourceIngestionResult>;
+  replaceSourceFile(
+    projectId: string,
+    sourceFileId: string,
+    file: File,
+  ): Promise<SourceIngestionResult>;
+  deleteSourceFile(
+    projectId: string,
+    sourceFileId: string,
+  ): Promise<Project>;
 }
 
 export interface WorkbenchProjectLifecycleService
@@ -325,6 +339,8 @@ export interface WorkbenchProjectLifecycleService
     projectId: string,
     expectedVersion: number,
   ): Promise<void>;
+  exportProjectBundle(projectId: string): Promise<ProjectExportBundle>;
+  importProjectBundle(bundle: unknown): Promise<Project>;
 }
 
 export type WorkbenchServiceInputErrorCode =
@@ -337,6 +353,11 @@ export type WorkbenchServiceInputErrorCode =
   | 'INVALID_CLOCK'
   | 'INVALID_PARSER_OUTPUT'
   | 'WEB_CRYPTO_UNAVAILABLE'
+  | 'SOURCE_FILE_NOT_FOUND'
+  | 'SOURCE_NOT_RETRYABLE'
+  | 'SOURCE_BLOB_NOT_FOUND'
+  | 'SOURCE_DUPLICATE'
+  | 'SOURCE_IN_USE'
   | 'SOURCE_CHUNK_NOT_FOUND'
   | 'SOURCE_QUOTE_MISMATCH'
   | 'AMBIGUOUS_SOURCE_QUOTE'
@@ -519,6 +540,16 @@ class DefaultWorkbenchService
       now: this.timestampAfter(current.updatedAt),
     });
     await this.store.deleteProject(intent);
+  }
+
+  async exportProjectBundle(
+    projectId: string,
+  ): Promise<ProjectExportBundle> {
+    return this.store.exportProject(projectId, this.timestamp());
+  }
+
+  async importProjectBundle(bundle: unknown): Promise<Project> {
+    return this.store.importProject(bundle);
   }
 
   async createEvidence(
@@ -1113,29 +1144,381 @@ class DefaultWorkbenchService
       };
     }
 
-    const sourceId = this.idFactory();
+    return this.persistSourceIngestion(
+      current,
+      file,
+      upload,
+      sha256,
+    );
+  }
+
+  async retrySourceFile(
+    projectId: string,
+    sourceFileId: string,
+  ): Promise<SourceIngestionResult> {
+    const current = await this.requireProject(projectId);
+    const source = this.requireSourceFile(current, sourceFileId);
+    if (
+      source.status !== 'failed' ||
+      source.error?.retryable !== true
+    ) {
+      throw new WorkbenchServiceInputError(
+        'SOURCE_NOT_RETRYABLE',
+      );
+    }
+    const blob = await this.store.getSourceBlob(
+      projectId,
+      sourceFileId,
+    );
+    if (blob === null) {
+      throw new WorkbenchServiceInputError(
+        'SOURCE_BLOB_NOT_FOUND',
+      );
+    }
+    const file = new File([blob], source.fileName, {
+      type: source.mediaType,
+      lastModified: Date.parse(source.updatedAt),
+    });
+    const upload = validateSourceUpload(file);
+    return this.persistSourceIngestion(
+      current,
+      file,
+      upload,
+      source.contentSha256,
+      source,
+    );
+  }
+
+  async replaceSourceFile(
+    projectId: string,
+    sourceFileId: string,
+    file: File,
+  ): Promise<SourceIngestionResult> {
+    const current = await this.requireProject(projectId);
+    const source = this.requireSourceFile(current, sourceFileId);
+    if (source.status === 'replaced') {
+      throw new WorkbenchServiceInputError(
+        'SOURCE_FILE_NOT_FOUND',
+      );
+    }
+    const result = await this.ingestSourceFile(projectId, file);
+    if (result.status === 'duplicate') {
+      throw new WorkbenchServiceInputError('SOURCE_DUPLICATE');
+    }
+    if (result.status === 'failed') {
+      return result;
+    }
+    const replacedAt = this.timestampAfter(
+      result.project.updatedAt,
+    );
+    const replacedSource: ProjectSourceFile = {
+      ...source,
+      version: source.version + 1,
+      updatedAt: replacedAt,
+      status: 'replaced',
+      error: null,
+      replacedByFileId: result.sourceFile.id,
+    };
+    const replacedProject = await this.store.saveProject(
+      this.projectAfterSourceInvalidation(
+        result.project,
+        sourceFileId,
+        'SOURCE_REPLACED',
+        replacedAt,
+        replacedSource,
+      ),
+      result.project.version,
+    );
+    return {
+      ...result,
+      project: replacedProject,
+      sourceFile: findProjectSource(
+        replacedProject,
+        result.sourceFile.id,
+      ),
+      chunks: replacedProject.sourceChunks.filter(
+        (chunk) =>
+          chunk.sourceFileId === result.sourceFile.id &&
+          chunk.sourceFileVersion ===
+            result.sourceFile.sourceVersion,
+      ),
+    };
+  }
+
+  async deleteSourceFile(
+    projectId: string,
+    sourceFileId: string,
+  ): Promise<Project> {
+    const current = await this.requireProject(projectId);
+    this.requireSourceFile(current, sourceFileId);
+    const inUse = current.sourceFiles.some(
+        (source) =>
+          source.replacedByFileId === sourceFileId,
+      );
+    if (inUse) {
+      throw new WorkbenchServiceInputError('SOURCE_IN_USE');
+    }
+    const deletedAt = this.timestampAfter(
+      current.updatedAt,
+    );
+    const next = this.projectAfterSourceInvalidation(
+      current,
+      sourceFileId,
+      'SOURCE_DELETED',
+      deletedAt,
+      null,
+    );
+    const saved = await this.store.saveProject(
+      next,
+      current.version,
+    );
+    await this.store.deleteSourceBlob(
+      projectId,
+      sourceFileId,
+    );
+    return saved;
+  }
+
+  private projectAfterSourceInvalidation(
+    current: Project,
+    sourceFileId: string,
+    reason: 'SOURCE_REPLACED' | 'SOURCE_DELETED',
+    updatedAt: IsoDateTime,
+    replacementState: ProjectSourceFile | null,
+  ): Project {
+    const deleting = replacementState === null;
+    const affectedEvidenceIds = new Set(
+      current.evidenceCards
+        .filter(
+          (evidence) =>
+            evidence.sourceFileId === sourceFileId,
+        )
+        .map((evidence) => evidence.id),
+    );
+    const evidenceCards = deleting
+      ? current.evidenceCards.filter(
+          (evidence) =>
+            !affectedEvidenceIds.has(evidence.id),
+        )
+      : current.evidenceCards.map((evidence) =>
+          affectedEvidenceIds.has(evidence.id)
+            ? {
+                ...evidence,
+                version: evidence.version + 1,
+                updatedAt,
+                status: 'selected' as const,
+                confirmationStatus: 'pending' as const,
+                userConfirmedAt: null,
+              }
+            : evidence,
+        );
+    const affectedOutlineIds = new Set(
+      current.outlines
+        .filter((outline) =>
+          outline.nodes.some((node) =>
+            node.evidenceCardIds.some((evidenceId) =>
+              affectedEvidenceIds.has(evidenceId),
+            ),
+          ),
+        )
+        .map((outline) => outline.id),
+    );
+    const outlines = current.outlines.map(
+      (outline): Outline => {
+        if (!affectedOutlineIds.has(outline.id)) {
+          return outline;
+        }
+        return {
+          ...outline,
+          version: outline.version + 1,
+          updatedAt,
+          status: 'draft',
+          lockedAt: null,
+          nodes: outline.nodes.map((node) => ({
+            ...node,
+            version: node.version + 1,
+            updatedAt,
+            locked: false,
+            evidenceCardIds: deleting
+              ? node.evidenceCardIds.filter(
+                  (evidenceId) =>
+                    !affectedEvidenceIds.has(evidenceId),
+                )
+              : node.evidenceCardIds,
+          })),
+        };
+      },
+    );
+    const outlineVersions = new Map(
+      outlines.map((outline) => [
+        outline.id,
+        outline.version,
+      ]),
+    );
+    const artifacts = current.artifacts.map(
+      (artifact): Artifact => {
+        if (!affectedOutlineIds.has(artifact.outlineId)) {
+          return artifact;
+        }
+        return {
+          ...artifact,
+          version: artifact.version + 1,
+          updatedAt,
+          outlineVersion:
+            outlineVersions.get(artifact.outlineId) ??
+            artifact.outlineVersion,
+          status: 'stale',
+          staleBecause: [
+            ...new Set([
+              ...artifact.staleBecause,
+              reason,
+            ]),
+          ],
+        };
+      },
+    );
+    const artifactVersions = new Map(
+      artifacts.map((artifact) => [
+        artifact.id,
+        artifact.version,
+      ]),
+    );
+    const affectedArtifactIds = new Set(
+      artifacts
+        .filter((artifact) =>
+          affectedOutlineIds.has(artifact.outlineId),
+        )
+        .map((artifact) => artifact.id),
+    );
+    const verificationResults = current.verificationResults.map(
+      (result): VerificationResult => {
+        const referencesAffectedEvidence =
+          result.checks.some((check) =>
+            check.evidenceCardIds.some((evidenceId) =>
+              affectedEvidenceIds.has(evidenceId),
+            ),
+          );
+        if (
+          !affectedArtifactIds.has(result.artifactId) &&
+          !referencesAffectedEvidence
+        ) {
+          return result;
+        }
+        return {
+          ...result,
+          version: result.version + 1,
+          updatedAt,
+          artifactVersion:
+            artifactVersions.get(result.artifactId) ??
+            result.artifactVersion,
+          status: 'stale',
+          checks: deleting
+            ? result.checks.map((check) => {
+                const evidenceCardIds =
+                  check.evidenceCardIds.filter(
+                    (evidenceId) =>
+                      !affectedEvidenceIds.has(evidenceId),
+                  );
+                return evidenceCardIds.length ===
+                  check.evidenceCardIds.length
+                  ? check
+                  : {
+                      ...check,
+                      version: check.version + 1,
+                      updatedAt,
+                      evidenceCardIds,
+                    };
+              })
+            : result.checks,
+        };
+      },
+    );
+    return parseProject({
+      ...current,
+      version: current.version + 1,
+      updatedAt,
+      sourceFiles: deleting
+        ? current.sourceFiles.filter(
+            (source) => source.id !== sourceFileId,
+          )
+        : current.sourceFiles.map((source) =>
+            source.id === sourceFileId
+              ? replacementState
+              : source,
+          ),
+      sourceChunks: deleting
+        ? current.sourceChunks.filter(
+            (chunk) =>
+              chunk.sourceFileId !== sourceFileId,
+          )
+        : current.sourceChunks,
+      evidenceCards,
+      outlines,
+      activeOutlineId:
+        current.activeOutlineId !== null &&
+        affectedOutlineIds.has(current.activeOutlineId)
+          ? null
+          : current.activeOutlineId,
+      artifacts,
+      verificationResults,
+    });
+  }
+
+  private async persistSourceIngestion(
+    current: Project,
+    file: File,
+    upload: ValidatedSourceUpload,
+    sha256: string,
+    retriedSource?: ProjectSourceFile,
+  ): Promise<SourceIngestionResult> {
+    const sourceId = retriedSource?.id ?? this.idFactory();
     const domainSource = createSourceFile({
       id: sourceId,
       upload,
       sha256,
     });
     const pendingAt = this.timestampAfter(current.updatedAt);
-    const pendingSource = createProjectSourceFile({
-      id: sourceId,
-      projectId,
-      upload,
-      sha256,
-      timestamp: pendingAt,
-    });
+    const pendingSource: ProjectSourceFile =
+      retriedSource === undefined
+        ? createProjectSourceFile({
+            id: sourceId,
+            projectId: current.id,
+            upload,
+            sha256,
+            timestamp: pendingAt,
+          })
+        : {
+            ...retriedSource,
+            version: retriedSource.version + 1,
+            updatedAt: pendingAt,
+            fileName: upload.name,
+            mediaType: upload.mimeType,
+            extension: upload.extension.slice(1),
+            sizeBytes: upload.sizeBytes,
+            contentSha256: sha256,
+            sourceVersion:
+              retriedSource.sourceVersion + 1,
+            status: 'pending',
+            parseProgress: 0,
+            pageCount: null,
+            error: null,
+            replacedByFileId: null,
+          };
     const pendingProject = await this.saveSourceState(
       current,
       pendingSource,
       pendingAt,
     );
-    await this.store.putSourceBlob(projectId, sourceId, file);
+    await this.store.putSourceBlob(
+      current.id,
+      sourceId,
+      file,
+    );
 
     const parsingDomainSource = beginSourceParsing(domainSource);
-    const parsingAt = this.timestampAfter(pendingProject.updatedAt);
+    const parsingAt = this.timestampAfter(
+      pendingProject.updatedAt,
+    );
     const parsingSource: ProjectSourceFile = {
       ...pendingSource,
       version: pendingSource.version + 1,
@@ -1148,7 +1531,9 @@ class DefaultWorkbenchService
       parsingSource,
       parsingAt,
     );
-    const chunksAt = this.timestampAfter(parsingProject.updatedAt);
+    const chunksAt = this.timestampAfter(
+      parsingProject.updatedAt,
+    );
     let chunks: SourceChunk[];
     let pageCount: number;
     if (upload.kind === 'pdf') {
@@ -1189,7 +1574,10 @@ class DefaultWorkbenchService
         }
         throw error;
       }
-    } else if (upload.kind === 'docx' || upload.kind === 'pptx') {
+    } else if (
+      upload.kind === 'docx' ||
+      upload.kind === 'pptx'
+    ) {
       const {
         BrowserOfficeParserError,
         parseBrowserOfficeFile,
@@ -1259,13 +1647,15 @@ class DefaultWorkbenchService
     }
 
     const withChunks = await this.store.replaceSourceChunks(
-      projectId,
+      current.id,
       sourceId,
       chunks,
       parsingProject.version,
       chunksAt,
     );
-    const readyAt = this.timestampAfter(withChunks.updatedAt);
+    const readyAt = this.timestampAfter(
+      withChunks.updatedAt,
+    );
     const readySource: ProjectSourceFile = {
       ...parsingSource,
       version: parsingSource.version + 1,
@@ -1283,9 +1673,15 @@ class DefaultWorkbenchService
     return {
       status: 'ready',
       project: readyProject,
-      sourceFile: findProjectSource(readyProject, sourceId),
+      sourceFile: findProjectSource(
+        readyProject,
+        sourceId,
+      ),
       chunks: readyProject.sourceChunks.filter(
-        (chunk) => chunk.sourceFileId === sourceId,
+        (chunk) =>
+          chunk.sourceFileId === sourceId &&
+          chunk.sourceFileVersion ===
+            readySource.sourceVersion,
       ),
     };
   }
@@ -1296,6 +1692,21 @@ class DefaultWorkbenchService
       throw new ProjectNotFoundError(projectId);
     }
     return project;
+  }
+
+  private requireSourceFile(
+    project: Project,
+    sourceFileId: string,
+  ): ProjectSourceFile {
+    const source = project.sourceFiles.find(
+      (candidate) => candidate.id === sourceFileId,
+    );
+    if (source === undefined) {
+      throw new WorkbenchServiceInputError(
+        'SOURCE_FILE_NOT_FOUND',
+      );
+    }
+    return source;
   }
 
   private requireDraftOutline(

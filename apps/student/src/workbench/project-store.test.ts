@@ -183,6 +183,28 @@ describe('MemoryProjectStore contract', () => {
     ]);
   });
 
+  it('deletes one persisted source blob without deleting the project', async () => {
+    const database = createMemoryProjectDatabase();
+    const store = new MemoryProjectStore({ database });
+    const current = project();
+    await store.createProject(current);
+    await store.putSourceBlob(
+      PROJECT_ID,
+      FILE_ID,
+      new Blob(['hello']),
+    );
+
+    await store.deleteSourceBlob(PROJECT_ID, FILE_ID);
+
+    await expect(
+      store.getSourceBlob(PROJECT_ID, FILE_ID),
+    ).resolves.toBeNull();
+    await expect(store.getProject(PROJECT_ID)).resolves.toEqual(
+      current,
+    );
+    expect(database.sourceBlobs.size).toBe(0);
+  });
+
   it('uses optimistic versions and reports both stale writes and duplicate creates', async () => {
     const store = new MemoryProjectStore();
     await store.createProject(project());
