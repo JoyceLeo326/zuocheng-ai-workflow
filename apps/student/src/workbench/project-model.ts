@@ -98,6 +98,15 @@ export type EvidenceKind =
   | 'case'
   | 'unverified';
 export type EvidenceStatus = 'candidate' | 'selected' | 'verified' | 'rejected';
+export type EvidenceStance = 'support' | 'oppose' | 'neutral';
+export type EvidenceStanceInput =
+  | EvidenceStance
+  | 'supports'
+  | 'opposes';
+export type EvidenceConfirmationStatus =
+  | 'pending'
+  | 'confirmed'
+  | 'rejected';
 
 export interface EvidenceCard extends VersionedEntity {
   projectId: EntityId;
@@ -112,6 +121,18 @@ export interface EvidenceCard extends VersionedEntity {
   note: string;
   citation: string;
   status: EvidenceStatus;
+  /**
+   * Optional on the structural base for pre-persistence UI drafts. The strict
+   * parser requires and canonicalizes both fields before a Project is stored.
+   */
+  stance?: EvidenceStanceInput;
+  confirmationStatus?: EvidenceConfirmationStatus;
+  /**
+   * Optional on the structural base only so the pre-existing evidence
+   * operations can cross the parser boundary. Persisted cards always include
+   * this canonical field; legacy `confirmedAt` is normalized during parsing.
+   */
+  userConfirmedAt?: IsoDateTime | null;
 }
 
 export interface OutlineNode extends VersionedEntity {
@@ -119,6 +140,8 @@ export interface OutlineNode extends VersionedEntity {
   title: string;
   conclusion: string;
   evidenceCardIds: EntityId[];
+  coveredRequirements: string[];
+  rubricCriterionIds: EntityId[];
   locked: boolean;
 }
 
@@ -712,6 +735,7 @@ export function parseSourceChunk(input: unknown): SourceChunk {
 export function parseEvidenceCard(input: unknown): EvidenceCard {
   const path = 'evidenceCard';
   const object = objectAt(input, path);
+  const entity = versionedAt(object, path);
   const characterStart = integerAt(
     object.characterStart,
     `${path}.characterStart`,
@@ -745,8 +769,82 @@ export function parseEvidenceCard(input: unknown): EvidenceCard {
   if (status === 'verified' && kind === 'unverified') {
     fail(`${path}.status`, 'cannot be verified while kind is unverified');
   }
+  const stanceInput = enumAt(object.stance, `${path}.stance`, [
+    'support',
+    'oppose',
+    'neutral',
+    'supports',
+    'opposes',
+  ] as const);
+  const stance: EvidenceStance =
+    stanceInput === 'supports'
+      ? 'support'
+      : stanceInput === 'opposes'
+        ? 'oppose'
+        : stanceInput;
+  const confirmationStatus = enumAt(
+    object.confirmationStatus,
+    `${path}.confirmationStatus`,
+    ['pending', 'confirmed', 'rejected'] as const,
+  );
+  const confirmationValue =
+    object.userConfirmedAt === undefined
+      ? object.confirmedAt
+      : object.userConfirmedAt;
+  if (confirmationValue === undefined) {
+    fail(
+      `${path}.userConfirmedAt`,
+      'is required and may be null before confirmation',
+    );
+  }
+  const userConfirmedAt = nullableAt(
+    confirmationValue,
+    dateTimeAt,
+    `${path}.userConfirmedAt`,
+  );
+  if (confirmationStatus === 'confirmed') {
+    if (status !== 'verified') {
+      fail(`${path}.status`, 'confirmed evidence must be verified');
+    }
+    if (userConfirmedAt === null) {
+      fail(
+        `${path}.userConfirmedAt`,
+        'is required for confirmed evidence',
+      );
+    }
+  } else if (confirmationStatus === 'pending') {
+    if (status !== 'candidate' && status !== 'selected') {
+      fail(`${path}.status`, 'unconfirmed evidence cannot be verified');
+    }
+    if (userConfirmedAt !== null) {
+      fail(
+        `${path}.userConfirmedAt`,
+        'must be null before user confirmation',
+      );
+    }
+  } else {
+    if (status !== 'rejected') {
+      fail(`${path}.status`, 'rejected confirmation must reject evidence');
+    }
+    if (userConfirmedAt !== null) {
+      fail(
+        `${path}.userConfirmedAt`,
+        'must be null for rejected evidence',
+      );
+    }
+  }
+  if (
+    userConfirmedAt !== null &&
+    (Date.parse(userConfirmedAt) < Date.parse(entity.createdAt) ||
+      Date.parse(userConfirmedAt) > Date.parse(entity.updatedAt))
+  ) {
+    fail(
+      `${path}.userConfirmedAt`,
+      'must be between createdAt and updatedAt',
+    );
+  }
   return {
-    ...versionedAt(object, path),
+    ...entity,
     projectId: idAt(object.projectId, `${path}.projectId`),
     sourceFileId: idAt(object.sourceFileId, `${path}.sourceFileId`),
     sourceChunkId: idAt(object.sourceChunkId, `${path}.sourceChunkId`),
@@ -766,6 +864,9 @@ export function parseEvidenceCard(input: unknown): EvidenceCard {
     }),
     citation,
     status,
+    stance,
+    confirmationStatus,
+    userConfirmedAt,
   };
 }
 
@@ -781,6 +882,16 @@ function parseOutlineNode(input: unknown, path: string): OutlineNode {
     evidenceCardIds: idListAt(
       object.evidenceCardIds,
       `${path}.evidenceCardIds`,
+      { allowEmpty: true },
+    ),
+    coveredRequirements: stringListAt(
+      object.coveredRequirements,
+      `${path}.coveredRequirements`,
+      { allowEmpty: true, itemMax: 2_000 },
+    ),
+    rubricCriterionIds: idListAt(
+      object.rubricCriterionIds,
+      `${path}.rubricCriterionIds`,
       { allowEmpty: true },
     ),
     locked: booleanAt(object.locked, `${path}.locked`),
@@ -1195,6 +1306,10 @@ export function parseProject(input: unknown): Project {
   const artifactsById = new Map(
     artifacts.map((artifact) => [artifact.id, artifact]),
   );
+  const allowedRequirements = new Set(taskDefinition.mustInclude);
+  const allowedRubricIds = new Set(
+    taskDefinition.rubric.map((criterion) => criterion.id),
+  );
 
   for (const chunk of sourceChunks) {
     const file = filesById.get(chunk.sourceFileId);
@@ -1254,17 +1369,70 @@ export function parseProject(input: unknown): Project {
     }
   }
   for (const outline of outlines) {
+    const coveredRequirements = new Set<string>();
+    const coveredRubricIds = new Set<EntityId>();
     for (const node of outline.nodes) {
-      if (
-        node.evidenceCardIds.some(
-          (evidenceId) => !evidenceById.has(evidenceId),
-        )
-      ) {
-        fail(
-          `${path}.outlines.nodes.evidenceCardIds`,
-          'must refer to project evidence cards',
-        );
+      for (const evidenceId of node.evidenceCardIds) {
+        const evidence = evidenceById.get(evidenceId);
+        if (evidence === undefined) {
+          fail(
+            `${path}.outlines.nodes.evidenceCardIds`,
+            'must refer to project evidence cards',
+          );
+        }
+        if (
+          (outline.status === 'selected' || outline.status === 'locked') &&
+          (evidence.status !== 'verified' ||
+            evidence.confirmationStatus !== 'confirmed' ||
+            evidence.userConfirmedAt === null ||
+            evidence.userConfirmedAt === undefined)
+        ) {
+          fail(
+            `${path}.outlines.nodes.evidenceCardIds`,
+            'selected or locked outlines require user-confirmed evidence',
+          );
+        }
       }
+      for (const requirement of node.coveredRequirements) {
+        if (!allowedRequirements.has(requirement)) {
+          fail(
+            `${path}.outlines.nodes.coveredRequirements`,
+            'must refer to taskDefinition.mustInclude',
+          );
+        }
+        coveredRequirements.add(requirement);
+      }
+      for (const rubricId of node.rubricCriterionIds) {
+        if (!allowedRubricIds.has(rubricId)) {
+          fail(
+            `${path}.outlines.nodes.rubricCriterionIds`,
+            'must refer to a taskDefinition rubric criterion',
+          );
+        }
+        coveredRubricIds.add(rubricId);
+      }
+    }
+    if (
+      (outline.status === 'selected' || outline.status === 'locked') &&
+      taskDefinition.mustInclude.some(
+        (requirement) => !coveredRequirements.has(requirement),
+      )
+    ) {
+      fail(
+        `${path}.outlines.nodes.coveredRequirements`,
+        'selected or locked outlines must cover every required item',
+      );
+    }
+    if (
+      (outline.status === 'selected' || outline.status === 'locked') &&
+      taskDefinition.rubric.some(
+        (criterion) => !coveredRubricIds.has(criterion.id),
+      )
+    ) {
+      fail(
+        `${path}.outlines.nodes.rubricCriterionIds`,
+        'selected or locked outlines must cover every rubric criterion',
+      );
     }
   }
   for (const artifact of artifacts) {

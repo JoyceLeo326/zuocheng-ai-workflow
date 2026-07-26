@@ -111,6 +111,9 @@ function evidenceCard() {
     note: '用于支持第一页结论',
     citation: '课程报告，第 1 页',
     status: 'verified',
+    stance: 'support',
+    confirmationStatus: 'confirmed',
+    userConfirmedAt: UPDATED_AT,
   };
 }
 
@@ -128,6 +131,8 @@ function outline() {
         title: '参与度为什么重要',
         conclusion: '参与度影响课程任务完成质量。',
         evidenceCardIds: [EVIDENCE_ID],
+        coveredRequirements: ['核心结论', '来源索引'],
+        rubricCriterionIds: [RUBRIC_ID],
         locked: false,
       },
     ],
@@ -309,6 +314,59 @@ describe('workbench project domain model', () => {
     ).toThrow(/status/u);
   });
 
+  it('persists evidence stance and requires explicit user confirmation before verification', () => {
+    expect(parseEvidenceCard(evidenceCard())).toMatchObject({
+      stance: 'support',
+      confirmationStatus: 'confirmed',
+      userConfirmedAt: UPDATED_AT,
+      status: 'verified',
+    });
+
+    expect(() =>
+      parseEvidenceCard({
+        ...evidenceCard(),
+        confirmationStatus: 'pending',
+        userConfirmedAt: null,
+      }),
+    ).toThrow(/status/u);
+    expect(() =>
+      parseEvidenceCard({
+        ...evidenceCard(),
+        userConfirmedAt: null,
+      }),
+    ).toThrow(/userConfirmedAt/u);
+    expect(() =>
+      parseEvidenceCard({
+        ...evidenceCard(),
+        stance: 'invented',
+      }),
+    ).toThrow(/stance/u);
+
+    const pending = parseEvidenceCard({
+      ...evidenceCard(),
+      status: 'selected',
+      confirmationStatus: 'pending',
+      userConfirmedAt: null,
+    });
+    expect(pending).toMatchObject({
+      status: 'selected',
+      confirmationStatus: 'pending',
+      userConfirmedAt: null,
+    });
+
+    const legacyOperationCard = {
+      ...evidenceCard(),
+      stance: 'opposes',
+      confirmedAt: UPDATED_AT,
+    };
+    delete (legacyOperationCard as { userConfirmedAt?: string }).userConfirmedAt;
+    expect(parseEvidenceCard(legacyOperationCard)).toMatchObject({
+      stance: 'oppose',
+      confirmationStatus: 'confirmed',
+      userConfirmedAt: UPDATED_AT,
+    });
+  });
+
   it('requires selected or locked outlines to bind evidence at every node', () => {
     const missingEvidence = outline();
     missingEvidence.nodes[0]!.evidenceCardIds = [];
@@ -330,6 +388,64 @@ describe('workbench project domain model', () => {
       id: '01900000-0000-7000-8000-000000000112',
     });
     expect(() => parseOutline(duplicatePosition)).toThrow(/position/u);
+
+    expect(() =>
+      parseOutline({
+        ...outline(),
+        nodes: [
+          {
+            ...outline().nodes[0]!,
+            coveredRequirements: ['核心结论', '核心结论'],
+          },
+        ],
+      }),
+    ).toThrow(/coveredRequirements/u);
+  });
+
+  it('persists verifiable delivery and rubric coverage on every outline node', () => {
+    const parsed = parseOutline(outline());
+    expect(parsed.nodes[0]).toMatchObject({
+      coveredRequirements: ['核心结论', '来源索引'],
+      rubricCriterionIds: [RUBRIC_ID],
+    });
+
+    const missingCoverage = project();
+    missingCoverage.outlines[0]!.nodes[0]!.coveredRequirements = [
+      '核心结论',
+    ];
+    expect(() => parseProject(missingCoverage)).toThrow(
+      /coveredRequirements/u,
+    );
+
+    const inventedCoverage = project();
+    inventedCoverage.outlines[0]!.nodes[0]!.coveredRequirements = [
+      '核心结论',
+      '来源索引',
+      '不存在的要求',
+    ];
+    expect(() => parseProject(inventedCoverage)).toThrow(
+      /coveredRequirements/u,
+    );
+
+    const unknownRubric = project();
+    unknownRubric.outlines[0]!.nodes[0]!.rubricCriterionIds = [
+      '01900000-0000-7000-8000-000000000199',
+    ];
+    expect(() => parseProject(unknownRubric)).toThrow(
+      /rubricCriterionIds/u,
+    );
+
+    const unconfirmedEvidence = project();
+    unconfirmedEvidence.evidenceCards[0]!.status = 'selected';
+    unconfirmedEvidence.evidenceCards[0]!.confirmationStatus = 'pending';
+    (
+      unconfirmedEvidence.evidenceCards[0]! as {
+        userConfirmedAt: string | null;
+      }
+    ).userConfirmedAt = null;
+    expect(() => parseProject(unconfirmedEvidence)).toThrow(
+      /evidenceCardIds/u,
+    );
   });
 
   it('prevents artifact and verification states from claiming unsupported success', () => {
@@ -395,5 +511,20 @@ describe('workbench project domain model', () => {
     expect(() => parseProject(missingActiveOutline)).toThrow(
       /activeOutlineId/u,
     );
+  });
+
+  it('keeps projects without evidence or outlines compatible', () => {
+    const emptyProject = project();
+    emptyProject.evidenceCards = [];
+    emptyProject.outlines = [];
+    (
+      emptyProject as {
+        activeOutlineId: string | null;
+      }
+    ).activeOutlineId = null;
+    emptyProject.artifacts = [];
+    emptyProject.verificationResults = [];
+
+    expect(parseProject(emptyProject)).toEqual(emptyProject);
   });
 });
