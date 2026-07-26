@@ -326,4 +326,83 @@ describe('WorkbenchService first-stage orchestration', () => {
       )?.text()
     ).toBe('%PDF-damaged');
   });
+
+  it('ingests real browser-decoded text and preserves an image as OCR-required', async () => {
+    const store = new MemoryProjectStore();
+    const service = createWorkbenchService({
+      store,
+      idFactory: sequentialIds(),
+      now: () => new Date('2026-07-27T01:00:00.000Z'),
+    });
+    const initial = await service.createProject(
+      form({
+        rubric: [
+          {
+            title: '证据',
+            description: '引用真实材料',
+            weightPercent: '100',
+          },
+        ],
+      }),
+    );
+    const notes = new File(
+      ['第一条课程证据。\n第二条课程证据。'],
+      'notes.txt',
+      { type: 'text/plain' },
+    );
+
+    const textResult = await service.ingestSourceFile(initial.id, notes);
+
+    expect(textResult.status).toBe('ready');
+    if (textResult.status !== 'ready') {
+      throw new Error('expected text source to be ready');
+    }
+    expect(textResult.sourceFile).toMatchObject({
+      fileName: 'notes.txt',
+      status: 'ready',
+      pageCount: 1,
+    });
+    expect(textResult.chunks).toEqual([
+      expect.objectContaining({
+        pageNumber: 1,
+        pageLabel: '1',
+        characterStart: 0,
+        characterEnd: 17,
+        text: '第一条课程证据。\n第二条课程证据。',
+      }),
+    ]);
+
+    const png = new File(
+      [
+        new Uint8Array([
+          0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+          0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+          0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+        ]),
+      ],
+      'scan.png',
+      { type: 'image/png' },
+    );
+    const imageResult = await service.ingestSourceFile(
+      textResult.project.id,
+      png,
+    );
+
+    expect(imageResult).toMatchObject({
+      status: 'failed',
+      errorCode: 'OCR_REQUIRED',
+      sourceFile: {
+        fileName: 'scan.png',
+        status: 'failed',
+        pageCount: null,
+        error: {
+          code: 'OCR_REQUIRED',
+          retryable: true,
+        },
+      },
+      project: {
+        sourceChunks: textResult.chunks,
+      },
+    });
+  });
 });

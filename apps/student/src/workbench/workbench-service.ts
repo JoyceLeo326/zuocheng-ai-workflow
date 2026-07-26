@@ -22,6 +22,12 @@ import {
   type SourceParserFailureCode,
   type ValidatedSourceUpload,
 } from './source-file.js';
+import {
+  BrowserSourceParserError,
+  parseBrowserSourceFile,
+  type BrowserSourceParserErrorCode,
+  type TraceableTextChunk,
+} from './text-parsers.js';
 
 export interface WorkbenchRubricFormInput {
   title: string;
@@ -49,6 +55,11 @@ export interface WorkbenchProjectFormInput {
   forbiddenContent: string;
 }
 
+export type SourceIngestionFailureCode =
+  | SourceParserFailureCode
+  | BrowserSourceParserErrorCode
+  | 'INVALID_PARSER_OUTPUT';
+
 export type SourceIngestionResult =
   | Readonly<{
       status: 'ready';
@@ -60,7 +71,7 @@ export type SourceIngestionResult =
       status: 'failed';
       project: Project;
       sourceFile: ProjectSourceFile;
-      errorCode: SourceParserFailureCode | 'INVALID_PARSER_OUTPUT';
+      errorCode: SourceIngestionFailureCode;
     }>
   | Readonly<{
       status: 'duplicate';
@@ -187,7 +198,7 @@ class DefaultWorkbenchService implements WorkbenchService {
       throw new ProjectNotFoundError(projectId);
     }
     const upload = validateSourceUpload(file);
-    if (upload.kind !== 'pdf') {
+    if (upload.kind === 'docx' || upload.kind === 'pptx') {
       throw new WorkbenchServiceInputError('UNSUPPORTED_SOURCE_KIND');
     }
     const sha256 = await computeSourceFileSha256(
@@ -250,44 +261,83 @@ class DefaultWorkbenchService implements WorkbenchService {
       parsingSource,
       parsingAt,
     );
-    const parsedDomainSource = await runPdfParsing(
-      parsingDomainSource,
-      file,
-      this.pdfParser,
-    );
-    if (parsedDomainSource.parsing.status === 'failed') {
-      return this.persistParseFailure(
-        parsingProject,
-        parsingSource,
-        parsedDomainSource.parsing.code,
-      );
-    }
-    if (parsedDomainSource.parsing.status !== 'parsed') {
-      return this.persistParseFailure(
-        parsingProject,
-        parsingSource,
-        'INVALID_PARSER_OUTPUT',
-      );
-    }
-
     const chunksAt = this.timestampAfter(parsingProject.updatedAt);
     let chunks: SourceChunk[];
-    try {
-      chunks = await this.createProjectChunks(
-        parsingProject.id,
-        parsingSource,
-        parsedDomainSource.parsing.chunks,
-        chunksAt,
+    let pageCount: number;
+    if (upload.kind === 'pdf') {
+      const parsedDomainSource = await runPdfParsing(
+        parsingDomainSource,
+        file,
+        this.pdfParser,
       );
-    } catch (error) {
-      if (error instanceof WorkbenchServiceInputError) {
+      if (parsedDomainSource.parsing.status === 'failed') {
+        return this.persistParseFailure(
+          parsingProject,
+          parsingSource,
+          parsedDomainSource.parsing.code,
+        );
+      }
+      if (parsedDomainSource.parsing.status !== 'parsed') {
         return this.persistParseFailure(
           parsingProject,
           parsingSource,
           'INVALID_PARSER_OUTPUT',
         );
       }
-      throw error;
+      pageCount = parsedDomainSource.parsing.pageCount;
+      try {
+        chunks = await this.createProjectChunks(
+          parsingProject.id,
+          parsingSource,
+          parsedDomainSource.parsing.chunks,
+          chunksAt,
+        );
+      } catch (error) {
+        if (error instanceof WorkbenchServiceInputError) {
+          return this.persistParseFailure(
+            parsingProject,
+            parsingSource,
+            'INVALID_PARSER_OUTPUT',
+          );
+        }
+        throw error;
+      }
+    } else {
+      try {
+        const parsed = await parseBrowserSourceFile(
+          {
+            file,
+            source: parsingDomainSource,
+            sourceFileVersion: parsingSource.sourceVersion,
+          },
+          this.cryptoProvider,
+        );
+        if (parsed.status === 'ocr-required') {
+          return this.persistParseFailure(
+            parsingProject,
+            parsingSource,
+            'OCR_REQUIRED',
+          );
+        }
+        chunks = this.createTraceableProjectChunks(
+          parsingProject.id,
+          parsingSource,
+          parsed.chunks,
+          chunksAt,
+        );
+        pageCount = new Set(
+          parsed.chunks.map((chunk) => chunk.pageNumber),
+        ).size;
+      } catch (error) {
+        if (error instanceof BrowserSourceParserError) {
+          return this.persistParseFailure(
+            parsingProject,
+            parsingSource,
+            error.code,
+          );
+        }
+        throw error;
+      }
     }
 
     const withChunks = await this.store.replaceSourceChunks(
@@ -304,7 +354,7 @@ class DefaultWorkbenchService implements WorkbenchService {
       updatedAt: readyAt,
       status: 'ready',
       parseProgress: 100,
-      pageCount: parsedDomainSource.parsing.pageCount,
+      pageCount,
       error: null,
     };
     const readyProject = await this.saveSourceState(
@@ -325,7 +375,7 @@ class DefaultWorkbenchService implements WorkbenchService {
   private async persistParseFailure(
     project: Project,
     source: ProjectSourceFile,
-    code: SourceParserFailureCode | 'INVALID_PARSER_OUTPUT',
+    code: SourceIngestionFailureCode,
   ): Promise<SourceIngestionResult> {
     const failedAt = this.timestampAfter(project.updatedAt);
     const failedSource: ProjectSourceFile = {
@@ -337,7 +387,7 @@ class DefaultWorkbenchService implements WorkbenchService {
       pageCount: null,
       error: {
         code,
-        message: `PDF parsing failed: ${code}`,
+        message: `Source parsing failed: ${code}`,
         retryable: true,
       },
     };
@@ -408,6 +458,30 @@ class DefaultWorkbenchService implements WorkbenchService {
       characterOffset = characterEnd + 1;
     }
     return chunks;
+  }
+
+  private createTraceableProjectChunks(
+    projectId: string,
+    source: ProjectSourceFile,
+    inputs: readonly TraceableTextChunk[],
+    timestamp: string,
+  ): SourceChunk[] {
+    return inputs.map((chunk) => ({
+      id: this.idFactory(),
+      version: 1,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      projectId,
+      sourceFileId: source.id,
+      sourceFileVersion: source.sourceVersion,
+      ordinal: chunk.ordinal,
+      pageNumber: chunk.pageNumber,
+      pageLabel: chunk.pageLabel,
+      characterStart: chunk.characterStart,
+      characterEnd: chunk.characterEnd,
+      text: chunk.text,
+      contentSha256: chunk.contentSha256,
+    }));
   }
 
   private async hashText(value: string): Promise<string> {
