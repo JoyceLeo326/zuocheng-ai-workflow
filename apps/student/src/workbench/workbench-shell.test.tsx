@@ -1,11 +1,102 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
+import { executeOutlineStageAction } from './outline-stage.js';
+import type { Project } from './project-model.js';
 import {
   WorkbenchShell,
+  createOutlineStageCallbacks,
+  hasConfirmedVerifiedEvidence,
   missingTaskFields,
   studentSurfaceForPath,
   type WorkbenchDraft,
 } from './workbench-shell.js';
+import type { WorkbenchService } from './workbench-service.js';
+
+const PROJECT_ID = '01900000-0000-7000-8000-000000000601';
+const TASK_ID = '01900000-0000-7000-8000-000000000602';
+const FILE_ID = '01900000-0000-7000-8000-000000000603';
+const CHUNK_ID = '01900000-0000-7000-8000-000000000604';
+const EVIDENCE_ID = '01900000-0000-7000-8000-000000000605';
+const OUTLINE_ID = '01900000-0000-7000-8000-000000000606';
+const NODE_ID = '01900000-0000-7000-8000-000000000607';
+const CREATED_AT = '2026-07-27T04:00:00.000Z';
+
+function outlineProject(
+  overrides: Partial<Project> = {},
+): Project {
+  return {
+    schemaVersion: 1,
+    id: PROJECT_ID,
+    version: 1,
+    createdAt: CREATED_AT,
+    updatedAt: CREATED_AT,
+    title: '结构接入测试',
+    status: 'active',
+    taskDefinition: {
+      id: TASK_ID,
+      version: 1,
+      createdAt: CREATED_AT,
+      updatedAt: CREATED_AT,
+      taskName: '结构接入测试',
+      audience: '课程教师',
+      dueAt: '2026-08-15T09:00:00.000Z',
+      lengthTarget: { unit: 'pages', value: 3 },
+      presentationDurationMinutes: 6,
+      outputFormats: ['pptx'],
+      rubric: [],
+      tone: '清晰',
+      mustInclude: [],
+      mustAvoid: [],
+    },
+    sourceFiles: [],
+    sourceChunks: [],
+    evidenceCards: [
+      {
+        id: EVIDENCE_ID,
+        version: 1,
+        createdAt: CREATED_AT,
+        updatedAt: CREATED_AT,
+        projectId: PROJECT_ID,
+        sourceFileId: FILE_ID,
+        sourceChunkId: CHUNK_ID,
+        sourceFileVersion: 1,
+        pageNumber: 1,
+        characterStart: 0,
+        characterEnd: 5,
+        quote: '真实证据',
+        kind: 'fact',
+        note: '',
+        citation: '课程材料，第 1 页',
+        status: 'verified',
+        stance: 'support',
+        confirmationStatus: 'confirmed',
+        userConfirmedAt: CREATED_AT,
+      },
+    ],
+    outlines: [],
+    activeOutlineId: null,
+    artifacts: [],
+    verificationResults: [],
+    ...overrides,
+  };
+}
+
+function outlineService(next: Project): WorkbenchService {
+  return {
+    listProjects: vi.fn().mockResolvedValue([]),
+    createProject: vi.fn().mockResolvedValue(next),
+    deleteProject: vi.fn().mockResolvedValue(undefined),
+    createEvidence: vi.fn().mockResolvedValue(next),
+    createOutline: vi.fn().mockResolvedValue(next),
+    addOutlineNode: vi.fn().mockResolvedValue(next),
+    updateOutlineNode: vi.fn().mockResolvedValue(next),
+    deleteOutlineNode: vi.fn().mockResolvedValue(next),
+    reorderOutlineNode: vi.fn().mockResolvedValue(next),
+    selectOutline: vi.fn().mockResolvedValue(next),
+    lockOutline: vi.fn().mockResolvedValue(next),
+    ingestSourceFile: vi.fn(),
+  };
+}
 
 describe('WB-01 student workbench entry', () => {
   it('routes the product root to the workbench and explicit account paths to identity', () => {
@@ -112,5 +203,140 @@ describe('WB-01 student workbench entry', () => {
         0,
       ),
     ).toEqual(['页面或字数', '评分标准', '任务材料']);
+  });
+
+  it('opens stage four only for user-confirmed verified evidence', () => {
+    const verified = outlineProject();
+    const pending = outlineProject({
+      evidenceCards: verified.evidenceCards.map((evidence) => ({
+        ...evidence,
+        status: 'selected',
+        confirmationStatus: 'pending',
+        userConfirmedAt: null,
+      })),
+    });
+    const missingConfirmation = outlineProject({
+      evidenceCards: verified.evidenceCards.map((evidence) => ({
+        ...evidence,
+        userConfirmedAt: null,
+      })),
+    });
+
+    expect(hasConfirmedVerifiedEvidence(null)).toBe(false);
+    expect(
+      hasConfirmedVerifiedEvidence(
+        outlineProject({ evidenceCards: [] }),
+      ),
+    ).toBe(false);
+    expect(hasConfirmedVerifiedEvidence(pending)).toBe(false);
+    expect(hasConfirmedVerifiedEvidence(missingConfirmation)).toBe(
+      false,
+    );
+    expect(hasConfirmedVerifiedEvidence(verified)).toBe(true);
+  });
+
+  it('maps every outline callback to the real service and stores each returned project', async () => {
+    const current = outlineProject();
+    const next = outlineProject({ version: 2 });
+    const service = outlineService(next);
+    const onProjectChange = vi.fn();
+    const callbacks = createOutlineStageCallbacks(
+      service,
+      current,
+      onProjectChange,
+    );
+
+    await callbacks.onCreateOutline({ title: '论证结构' });
+    await callbacks.onAddNode({
+      outlineId: OUTLINE_ID,
+      title: '核心结论',
+      conclusion: '真实证据支持核心结论。',
+      evidenceCardIds: [EVIDENCE_ID],
+      coveredRequirements: [],
+      rubricCriterionIds: [],
+    });
+    await callbacks.onUpdateNode({
+      outlineId: OUTLINE_ID,
+      nodeId: NODE_ID,
+      patch: { conclusion: '更新后的真实结论。' },
+    });
+    await callbacks.onDeleteNode({
+      outlineId: OUTLINE_ID,
+      nodeId: NODE_ID,
+    });
+    await callbacks.onReorderNode({
+      outlineId: OUTLINE_ID,
+      nodeId: NODE_ID,
+      targetPosition: 0,
+    });
+    await callbacks.onSelectOutline({ outlineId: OUTLINE_ID });
+    await callbacks.onLockOutline({ outlineId: OUTLINE_ID });
+
+    expect(service.createOutline).toHaveBeenCalledWith(PROJECT_ID, {
+      title: '论证结构',
+      nodes: [],
+    });
+    expect(service.addOutlineNode).toHaveBeenCalledWith(
+      PROJECT_ID,
+      OUTLINE_ID,
+      {
+        title: '核心结论',
+        conclusion: '真实证据支持核心结论。',
+        evidenceCardIds: [EVIDENCE_ID],
+        coveredRequirements: [],
+        rubricCriterionIds: [],
+      },
+    );
+    expect(service.updateOutlineNode).toHaveBeenCalledWith(
+      PROJECT_ID,
+      OUTLINE_ID,
+      NODE_ID,
+      { conclusion: '更新后的真实结论。' },
+    );
+    expect(service.deleteOutlineNode).toHaveBeenCalledWith(
+      PROJECT_ID,
+      OUTLINE_ID,
+      NODE_ID,
+    );
+    expect(service.reorderOutlineNode).toHaveBeenCalledWith(
+      PROJECT_ID,
+      OUTLINE_ID,
+      NODE_ID,
+      0,
+    );
+    expect(service.selectOutline).toHaveBeenCalledWith(
+      PROJECT_ID,
+      OUTLINE_ID,
+    );
+    expect(service.lockOutline).toHaveBeenCalledWith(
+      PROJECT_ID,
+      OUTLINE_ID,
+    );
+    expect(onProjectChange).toHaveBeenCalledTimes(7);
+    for (const [savedProject] of onProjectChange.mock.calls) {
+      expect(savedProject).toBe(next);
+    }
+  });
+
+  it('preserves a real lock rejection for the outline stage alert', async () => {
+    const current = outlineProject();
+    const service = outlineService(current);
+    const lockError = new Error('仍有必须包含项未覆盖');
+    service.lockOutline = vi.fn().mockRejectedValue(lockError);
+    const callbacks = createOutlineStageCallbacks(
+      service,
+      current,
+      vi.fn(),
+    );
+
+    await expect(
+      executeOutlineStageAction(callbacks.onLockOutline, {
+        outlineId: OUTLINE_ID,
+      }),
+    ).resolves.toEqual({
+      status: 'error',
+      actionKey: null,
+      message: '仍有必须包含项未覆盖',
+    });
   });
 });
