@@ -14,13 +14,18 @@ export async function registerOfflineSupport(
     | ServiceWorkerContainerLike
     | null
     | undefined = globalThis.navigator?.serviceWorker,
+  baseUrl = '/',
 ): Promise<ServiceWorkerRegistrationLike | null> {
   if (serviceWorker === null || serviceWorker === undefined) {
     return null;
   }
+  const scope =
+    baseUrl.startsWith('/') && baseUrl.endsWith('/')
+      ? baseUrl
+      : '/';
   try {
-    return await serviceWorker.register('/sw.js', {
-      scope: '/',
+    return await serviceWorker.register(`${scope}sw.js`, {
+      scope,
       updateViaCache: 'none',
     });
   } catch {
