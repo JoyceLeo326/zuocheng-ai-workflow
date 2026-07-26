@@ -94,6 +94,13 @@ function outlineService(next: Project): WorkbenchService {
     reorderOutlineNode: vi.fn().mockResolvedValue(next),
     selectOutline: vi.fn().mockResolvedValue(next),
     lockOutline: vi.fn().mockResolvedValue(next),
+    ensureDraftArtifact: vi.fn().mockResolvedValue(next),
+    insertDraftPage: vi.fn().mockResolvedValue(next),
+    updateDraftPage: vi.fn().mockResolvedValue(next),
+    deleteDraftPage: vi.fn().mockResolvedValue(next),
+    reorderDraftPage: vi.fn().mockResolvedValue(next),
+    setDraftPageLocked: vi.fn().mockResolvedValue(next),
+    verifyDraftArtifact: vi.fn().mockResolvedValue(next),
     ingestSourceFile: vi.fn(),
   };
 }
