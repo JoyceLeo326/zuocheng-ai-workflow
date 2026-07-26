@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { IdentityApiError } from './identity-client.js';
 import {
+  identityErrorPresentation,
   identityErrorMessage,
   parseIdentityLink,
   sanitizedIdentityUrl,
@@ -59,5 +60,40 @@ describe('identity portal link and error boundary', () => {
       ),
     ).toContain('身份 API');
     expect(identityErrorMessage(error)).not.toContain('Internal detail');
+  });
+
+  it('classifies error states for accessible rate, provider, offline and permission treatments', () => {
+    const rateError = new IdentityApiError(
+      new Response(null, { status: 429 }),
+      { code: 'RATE_LIMITED' },
+      45,
+    );
+    const providerError = new IdentityApiError(
+      new Response(null, { status: 503 }),
+      { code: 'OAUTH_PROVIDER_UNAVAILABLE' },
+      undefined,
+    );
+    const permissionError = new IdentityApiError(
+      new Response(null, { status: 403 }),
+      { code: 'FORBIDDEN' },
+      undefined,
+    );
+
+    expect(identityErrorPresentation(rateError)).toMatchObject({
+      kind: 'rate-limit',
+      title: '操作冷却中',
+    });
+    expect(identityErrorPresentation(providerError)).toMatchObject({
+      kind: 'provider-unavailable',
+      title: '登录方式暂不可用',
+    });
+    expect(identityErrorPresentation(new TypeError('Failed to fetch'))).toMatchObject({
+      kind: 'offline',
+      title: '无法连接网络',
+    });
+    expect(identityErrorPresentation(permissionError)).toMatchObject({
+      kind: 'permission',
+      title: '没有执行权限',
+    });
   });
 });
