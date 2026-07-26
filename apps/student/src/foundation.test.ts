@@ -5,9 +5,9 @@ describe('student application boundary', () => {
   it('does not claim the production workflow is complete', () => {
     expect(STUDENT_FOUNDATION_STATUS).toEqual({
       application: 'student',
-      phase: 'ZC-01',
+      phase: 'ZC-03',
+      identityLifecycleComplete: false,
       productionWorkflowComplete: false,
     });
   });
 });
-
