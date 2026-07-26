@@ -22,6 +22,10 @@ import {
   type OutlineStageCallbacks,
 } from './outline-stage.js';
 import {
+  SourceManager,
+  type SourceManagerCallbacks,
+} from './source-manager.js';
+import {
   DRAFT_ARTIFACT_FORMAT,
   readDraftArtifactPayload,
   type DraftArtifactPayload,
@@ -44,6 +48,7 @@ export interface WorkbenchShellProps {
   service?: WorkbenchService;
   initialDraft?: WorkbenchDraft;
   initialMaterials?: File[];
+  initialProject?: Project;
 }
 
 export interface WorkbenchDraft {
@@ -269,6 +274,47 @@ export function createOutlineStageCallbacks(
       persist(() => service.selectOutline(project.id, outlineId)),
     onLockOutline: ({ outlineId }) =>
       persist(() => service.lockOutline(project.id, outlineId)),
+  };
+}
+
+export function createSourceManagerCallbacks(
+  service: WorkbenchService,
+  project: Project,
+  onProjectChange: (next: Project) => void,
+): SourceManagerCallbacks {
+  const persistIngestion = async (
+    operation: () => Promise<SourceIngestionResult>,
+  ) => {
+    const result = await operation();
+    onProjectChange(result.project);
+  };
+  return {
+    onAppendFiles: async ({ files }) => {
+      for (const file of files) {
+        await persistIngestion(() =>
+          service.ingestSourceFile(project.id, file),
+        );
+      }
+    },
+    onRetrySource: ({ sourceFileId }) =>
+      persistIngestion(() =>
+        service.retrySourceFile(project.id, sourceFileId),
+      ),
+    onReplaceSource: ({ sourceFileId, file }) =>
+      persistIngestion(() =>
+        service.replaceSourceFile(
+          project.id,
+          sourceFileId,
+          file,
+        ),
+      ),
+    onDeleteSource: async ({ sourceFileId }) => {
+      const next = await service.deleteSourceFile(
+        project.id,
+        sourceFileId,
+      );
+      onProjectChange(next);
+    },
   };
 }
 
@@ -546,18 +592,30 @@ export function WorkbenchShell({
   onLogin,
   onRegister,
   service,
-  initialDraft = emptyWorkbenchDraft,
+  initialDraft,
   initialMaterials = [],
+  initialProject,
 }: WorkbenchShellProps) {
-  const [draft, setDraft] = useState<WorkbenchDraft>(initialDraft);
+  const [draft, setDraft] = useState<WorkbenchDraft>(
+    initialDraft ??
+      (initialProject === undefined
+        ? emptyWorkbenchDraft
+        : draftFromProject(initialProject)),
+  );
   const [materials, setMaterials] = useState<File[]>(initialMaterials);
   const [materialProgress, setMaterialProgress] = useState<
     Record<string, MaterialProgress>
   >({});
-  const [project, setProject] = useState<Project | null>(null);
-  const [savePhase, setSavePhase] = useState<SavePhase>('idle');
+  const [project, setProject] = useState<Project | null>(
+    initialProject ?? null,
+  );
+  const [savePhase, setSavePhase] = useState<SavePhase>(
+    initialProject === undefined ? 'idle' : 'saved',
+  );
   const [saveMessage, setSaveMessage] = useState('');
-  const [activeStage, setActiveStage] = useState(0);
+  const [activeStage, setActiveStage] = useState(
+    (initialProject?.sourceFiles.length ?? 0) > 0 ? 1 : 0,
+  );
   const [draftPreparationPhase, setDraftPreparationPhase] =
     useState<DraftPreparationPhase>('idle');
   const [draftPreparationMessage, setDraftPreparationMessage] =
@@ -604,6 +662,10 @@ export function WorkbenchShell({
     service === undefined || project === null
       ? null
       : createOutlineStageCallbacks(service, project, setProject);
+  const sourceManagerCallbacks =
+    service === undefined || project === null
+      ? null
+      : createSourceManagerCallbacks(service, project, setProject);
   const draftArtifact = useMemo(
     () => findDraftArtifact(project),
     [project],
@@ -1045,7 +1107,7 @@ export function WorkbenchShell({
           </form>
           ) : null}
 
-          {activeStage < 2 ? (
+          {activeStage === 0 ? (
           <section
             aria-labelledby="materials-title"
             className="material-panel"
@@ -1065,8 +1127,7 @@ export function WorkbenchShell({
               </span>
             </header>
 
-            {activeStage === 0 ? (
-              <div className="material-picker">
+            <div className="material-picker">
                 <input
                   accept=".pdf,.docx,.pptx,.txt,.md,image/*"
                   className="sr-only"
@@ -1082,8 +1143,7 @@ export function WorkbenchShell({
                   <strong>选择材料文件</strong>
                   <small>PDF、DOCX、PPTX、TXT、Markdown 或图片</small>
                 </label>
-              </div>
-            ) : null}
+            </div>
 
             {materialCount === 0 ? (
               <div className="material-empty">
@@ -1116,8 +1176,7 @@ export function WorkbenchShell({
                         </small>
                       ) : null}
                     </span>
-                    {activeStage === 0 ? (
-                      <button
+                    <button
                         className="text-action"
                         onClick={() => {
                           setMaterials((current) =>
@@ -1129,8 +1188,7 @@ export function WorkbenchShell({
                         type="button"
                       >
                         移除
-                      </button>
-                    ) : null}
+                    </button>
                   </li>
                 ))}
               </ul>
@@ -1166,21 +1224,18 @@ export function WorkbenchShell({
               </ul>
             )}
 
-            {activeStage === 1 && (project?.sourceChunks.length ?? 0) > 0 ? (
-              <ol className="source-chunk-list" aria-label="已解析原文片段">
-                {project?.sourceChunks.slice(0, 100).map((chunk) => (
-                  <li key={chunk.id}>
-                    <span>第 {String(chunk.pageNumber)} 页</span>
-                    <p>{chunk.text}</p>
-                    <small>
-                      字符 {String(chunk.characterStart)}–
-                      {String(chunk.characterEnd)}
-                    </small>
-                  </li>
-                ))}
-              </ol>
-            ) : null}
           </section>
+          ) : null}
+
+          {activeStage === 1 &&
+          project !== null &&
+          sourceManagerCallbacks !== null ? (
+            <SourceManager
+              {...sourceManagerCallbacks}
+              project={project}
+              sourceChunks={project.sourceChunks}
+              sourceFiles={project.sourceFiles}
+            />
           ) : null}
 
           {activeStage === 2 && project !== null ? (

@@ -6,6 +6,7 @@ import {
   WorkbenchShell,
   createDraftStageCallbacks,
   createOutlineStageCallbacks,
+  createSourceManagerCallbacks,
   findDraftArtifact,
   hasConfirmedVerifiedEvidence,
   missingTaskFields,
@@ -108,6 +109,9 @@ function outlineService(next: Project): WorkbenchService {
     setDraftPageLocked: vi.fn().mockResolvedValue(next),
     verifyDraftArtifact: vi.fn().mockResolvedValue(next),
     ingestSourceFile: vi.fn(),
+    retrySourceFile: vi.fn(),
+    replaceSourceFile: vi.fn(),
+    deleteSourceFile: vi.fn().mockResolvedValue(next),
   };
 }
 
@@ -297,6 +301,163 @@ describe('WB-01 student workbench entry', () => {
     expect(html).toContain(
       '请补充：任务名称、听众、截止时间、页面或字数、输出格式、评分标准、任务材料。',
     );
+  });
+
+  it('renders SourceManager for a persisted material-stage project instead of the legacy long lists', () => {
+    const current = outlineProject({
+      sourceFiles: [
+        {
+          id: FILE_ID,
+          version: 1,
+          createdAt: CREATED_AT,
+          updatedAt: CREATED_AT,
+          projectId: PROJECT_ID,
+          fileName: '课程报告.pdf',
+          mediaType: 'application/pdf',
+          extension: 'pdf',
+          sizeBytes: 2_048,
+          contentSha256: 'a'.repeat(64),
+          blobId: `source-file:${FILE_ID}`,
+          sourceVersion: 1,
+          status: 'ready',
+          parseProgress: 100,
+          pageCount: 1,
+          error: null,
+          replacedByFileId: null,
+        },
+      ],
+      sourceChunks: [
+        {
+          id: CHUNK_ID,
+          version: 1,
+          createdAt: CREATED_AT,
+          updatedAt: CREATED_AT,
+          projectId: PROJECT_ID,
+          sourceFileId: FILE_ID,
+          sourceFileVersion: 1,
+          ordinal: 0,
+          pageNumber: 1,
+          pageLabel: '第 1 页',
+          characterStart: 0,
+          characterEnd: 5,
+          text: '真实证据',
+          contentSha256: 'b'.repeat(64),
+        },
+      ],
+    });
+    const html = renderToStaticMarkup(
+      <WorkbenchShell
+        initialProject={current}
+        onLogin={vi.fn()}
+        onRegister={vi.fn()}
+        service={outlineService(current)}
+      />,
+    );
+
+    expect(html).toContain('材料管理');
+    expect(html).toContain('课程报告.pdf');
+    expect(html).toContain('拖拽材料到这里');
+    expect(html).toContain('查看片段');
+    expect(html).not.toContain('class="source-chunk-list"');
+    expect(html).not.toContain('class="material-list"');
+  });
+
+  it('maps SourceManager callbacks to real material service methods and stores returned projects', async () => {
+    const current = outlineProject();
+    const next = outlineProject({ version: 2 });
+    const readySource = {
+      id: FILE_ID,
+      version: 1,
+      createdAt: CREATED_AT,
+      updatedAt: CREATED_AT,
+      projectId: PROJECT_ID,
+      fileName: '课程报告.pdf',
+      mediaType: 'application/pdf',
+      extension: 'pdf',
+      sizeBytes: 4,
+      contentSha256: 'a'.repeat(64),
+      blobId: `source-file:${FILE_ID}`,
+      sourceVersion: 1,
+      status: 'ready' as const,
+      parseProgress: 100,
+      pageCount: 1,
+      error: null,
+      replacedByFileId: null,
+    };
+    const ingestion = {
+      status: 'ready' as const,
+      project: next,
+      sourceFile: readySource,
+      chunks: [],
+    };
+    const service = {
+      ...outlineService(next),
+      ingestSourceFile: vi.fn().mockResolvedValue(ingestion),
+      retrySourceFile: vi.fn().mockResolvedValue(ingestion),
+      replaceSourceFile: vi.fn().mockResolvedValue(ingestion),
+      deleteSourceFile: vi.fn().mockResolvedValue(next),
+    };
+    const onProjectChange = vi.fn();
+    const sourceCallbacks = createSourceManagerCallbacks(
+      service,
+      current,
+      onProjectChange,
+    );
+    const first = new File(['pdf'], 'first.pdf', {
+      type: 'application/pdf',
+    });
+    const second = new File(['text'], 'second.txt', {
+      type: 'text/plain',
+    });
+    const replacement = new File(['new'], 'replacement.pdf', {
+      type: 'application/pdf',
+    });
+
+    await sourceCallbacks.onAppendFiles({
+      projectId: PROJECT_ID,
+      files: [first, second],
+    });
+    await sourceCallbacks.onRetrySource({
+      projectId: PROJECT_ID,
+      sourceFileId: FILE_ID,
+    });
+    await sourceCallbacks.onReplaceSource({
+      projectId: PROJECT_ID,
+      sourceFileId: FILE_ID,
+      file: replacement,
+    });
+    await sourceCallbacks.onDeleteSource({
+      projectId: PROJECT_ID,
+      sourceFileId: FILE_ID,
+    });
+
+    expect(service.ingestSourceFile).toHaveBeenNthCalledWith(
+      1,
+      PROJECT_ID,
+      first,
+    );
+    expect(service.ingestSourceFile).toHaveBeenNthCalledWith(
+      2,
+      PROJECT_ID,
+      second,
+    );
+    expect(service.retrySourceFile).toHaveBeenCalledWith(
+      PROJECT_ID,
+      FILE_ID,
+    );
+    expect(service.replaceSourceFile).toHaveBeenCalledWith(
+      PROJECT_ID,
+      FILE_ID,
+      replacement,
+    );
+    expect(service.deleteSourceFile).toHaveBeenCalledWith(
+      PROJECT_ID,
+      FILE_ID,
+    );
+    expect(onProjectChange).toHaveBeenCalledTimes(5);
+    for (const [savedProject] of onProjectChange.mock.calls) {
+      expect(savedProject).toBe(next);
+    }
   });
 
   it('keeps authentication out of the default DOM and exposes only standard header actions', () => {
