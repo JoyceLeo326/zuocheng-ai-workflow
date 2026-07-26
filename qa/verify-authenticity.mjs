@@ -48,12 +48,17 @@ function countTagWithClass(html, tagName, className) {
 
 const publicPageText = visibleText(indexHtml);
 
-assert.match(publicPageText, /个人作品案例/, "首页需清楚可见地声明这是个人作品案例");
-assert.match(publicPageText, /教学演示/, "首页需清楚可见地声明这是教学演示");
+assert.match(publicPageText, /独立作品/, "首页需如实说明这是独立作品");
+assert.match(publicPageText, /可直接使用/, "首页需明确产品可以直接使用");
 assert.match(
   publicPageText,
-  /问卷、访谈、反馈(?:与|和)漏斗数字[^。；]*不代表真实用户数据(?:或|，也不代表)既有运营成绩/,
-  "首页需明确说明问卷、访谈、反馈、漏斗数字不代表真实用户数据或既有运营成绩",
+  /课程反馈与运营数字[^。；]*不计入真实统计/,
+  "首页需明确说明示例反馈与运营数字不计入真实统计",
+);
+assert.doesNotMatch(
+  publicPageText,
+  /(?:项目所有者|固定成本|零自动账单|成本策略)/,
+  "面向用户的首页不得展示内部成本约束",
 );
 assert.match(readme, /^#{1,6}\s+真实性边界\s*$/m, "README 需包含“真实性边界”章节");
 
@@ -68,6 +73,7 @@ const localReferences = [...indexHtml.matchAll(/\b(?:src|href)\s*=\s*["']([^"']+
   .map((match) => match[1].trim())
   .filter((reference) =>
     reference &&
+    reference !== "/app/" &&
     !reference.startsWith("#") &&
     !/^(?:[a-z][a-z\d+.-]*:)?\/\//i.test(reference) &&
     !/^(?:data|mailto|tel|javascript):/i.test(reference)

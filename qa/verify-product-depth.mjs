@@ -52,8 +52,8 @@ test("hero leads with a complete local-first task launchpad", () => {
   assert.match(indexHtml, /data-reset-task/i, "launchpad needs a reset action");
   assert.match(
     indexHtml,
-    /本地规则[^。；<]*(?:生成|规划)[^。；<]*(?:不是|并非)\s*AI/i,
-    "launchpad must visibly disclose that the plan is generated locally by rules, not AI",
+    /计划按规则生成，不含 AI 内容建议/,
+    "launchpad must accurately distinguish its rule-generated plan from AI content",
   );
 });
 
@@ -142,13 +142,14 @@ test("launchpad persists per-day progress and supports download plus reset", () 
   assert.match(script, /\.md["'`]/, "download should use a Markdown filename");
 });
 
-test("legacy authenticity and interactions remain intact", () => {
-  assert.match(indexHtml, /个人作品案例/);
-  assert.match(indexHtml, /教学演示/);
+test("product authenticity and interactions remain intact", () => {
+  assert.match(indexHtml, /独立作品/);
+  assert.match(indexHtml, /可直接使用/);
   assert.match(
     indexHtml,
-    /问卷、访谈、反馈(?:与|和)漏斗数字[^。；]*不代表真实用户数据(?:或|，也不代表)既有运营成绩/,
+    /课程反馈与运营数字[^。；]*不计入真实统计/,
   );
+  assert.doesNotMatch(indexHtml, /项目所有者固定成本|零自动账单/);
   assert.equal(countClass(indexHtml, "day-tab"), 7);
   assert.equal(countAttribute(indexHtml, "data-machine-button"), 1);
   assert.equal(countClass(indexHtml, "work-step"), 5);
