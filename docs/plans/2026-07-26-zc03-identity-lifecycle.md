@@ -78,6 +78,9 @@
 
 - 注册、登录、验证、恢复、Passkey、三种 OAuth、设备列表、撤销、导出、删除
   的真实 UI。
+- 登录不是开始使用的前置条件：默认主路径允许直接进入真实本地任务模式；账号入口
+  在用户选择跨设备同步、团队、云端保存或账号管理时出现。匿名 CTA 不得跳转到
+  空壳页面；本地数据和登录后迁移由 ZC-04 的 IndexedDB/outbox 门禁共同验收。
 - loading/empty/error/offline/permission/rate-limit/provider-unavailable 状态；
   键盘、焦点、错误摘要、WCAG 2.2 AA 和四视口。
 - UI 不缓存 token，不用 Toast 冒充后台动作。
