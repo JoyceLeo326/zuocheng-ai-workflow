@@ -1,6 +1,6 @@
 /* global self, caches, fetch, URL, Response */
 
-const SHELL_CACHE = 'zuocheng-shell-v1';
+const SHELL_CACHE = 'zuocheng-shell-v2';
 const SHELL_FALLBACK = '/';
 
 self.addEventListener('install', (event) => {

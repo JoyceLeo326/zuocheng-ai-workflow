@@ -70,4 +70,6 @@ createRoot(root).render(
   </StrictMode>,
 );
 
-void registerOfflineSupport();
+if (import.meta.env.PROD) {
+  void registerOfflineSupport();
+}
