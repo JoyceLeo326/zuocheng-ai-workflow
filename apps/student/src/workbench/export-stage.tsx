@@ -529,8 +529,7 @@ export function ExportStage({
           <p className="export-stage__eyebrow">第 6 阶段 · 导出与交付</p>
           <h2 id="export-stage-title">生成可核验的交付文件</h2>
           <p className="export-stage__intro">
-            每次导出都基于当前项目快照重新生成文件，并记录实际大小与
-            SHA-256。浏览器不会在文件真正生成前显示成功。
+            选择需要的格式，生成后即可下载；文件大小和校验值会一并显示。
           </p>
         </div>
         <div className="export-stage__package-action">
