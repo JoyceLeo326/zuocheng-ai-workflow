@@ -1,8 +1,18 @@
 import type { RuntimeEnvironment } from '@zuocheng/config';
 import type { Pool } from 'pg';
-import type { BetterAuthSessionApi } from './auth/better-auth-session-verifier.js';
 import { BetterAuthSessionVerifier } from './auth/better-auth-session-verifier.js';
+import type {
+  IdentityHttpSecurityPort,
+  IdentityLifecycleService,
+  IdentityRateLimiter,
+} from './auth/http/identity-lifecycle-service.js';
 import { PostgresMembershipRepository } from './auth/postgres-membership-repository.js';
+import {
+  createBetterAuthRuntime,
+  isCustomerManagedIdentityRuntimeConfig,
+  type BetterAuthRuntime,
+  type CustomerManagedIdentityRuntimeConfig,
+} from './auth/runtime/better-auth-runtime.js';
 import { TenantSessionResolver } from './auth/tenant-session.js';
 import {
   createApp,
@@ -17,7 +27,10 @@ import { ProjectService } from './projects/project-service.js';
 
 export type CustomerManagedRuntimeAdapter = Readonly<{
   kind: 'customer-managed-production';
-  betterAuth: BetterAuthSessionApi;
+  identity: CustomerManagedIdentityRuntimeConfig;
+  identityLifecycleService: IdentityLifecycleService;
+  identityHttpSecurity: IdentityHttpSecurityPort;
+  identityRateLimiter: IdentityRateLimiter;
   principalPoolForContext: (tenantId: string, userId: string) => Pool;
   checkReadiness: () => Promise<ProductionDependencyStatus>;
   close: () => Promise<void>;
@@ -38,6 +51,9 @@ type ComposeApiRuntimeOptions = Readonly<{
   clock?: () => Date;
   createRequestId?: () => string;
   importer?: (specifier: string) => Promise<unknown>;
+  identityRuntimeFactory?: (
+    config: CustomerManagedIdentityRuntimeConfig,
+  ) => BetterAuthRuntime;
 }>;
 
 type ProductionCompositionErrorCode =
@@ -84,11 +100,15 @@ export async function composeApiRuntime(
   );
   const adapterModule = parseAdapterModule(imported);
   const adapter = await createAdapter(adapterModule);
+  const identityRuntime = await safelyCreateIdentityRuntime(
+    adapter,
+    options.identityRuntimeFactory ?? createBetterAuthRuntime,
+  );
   const pools = nodePostgresTenantPools((tenantId, userId) =>
     adapter.principalPoolForContext(tenantId, userId),
   );
   const resolver = new TenantSessionResolver(
-    new BetterAuthSessionVerifier(adapter.betterAuth, clock),
+    new BetterAuthSessionVerifier(identityRuntime.api, clock),
     new PostgresMembershipRepository(pools),
   );
   // ProjectService owns its own clock/UUID hooks; pass the production UUIDv7
@@ -98,20 +118,47 @@ export async function composeApiRuntime(
     now: clock,
   });
 
+  const app = createApp(configuration.DEPLOYMENT_MODE, {
+    clock,
+    createRequestId,
+    productionReadinessProbe: () => verifiedReadiness(adapter),
+    identityLifecycleService: adapter.identityLifecycleService,
+    identityHttpSecurity: adapter.identityHttpSecurity,
+    identityRateLimiter: adapter.identityRateLimiter,
+    tenantSessionResolver: resolver,
+    projectService: service,
+  });
+  const handleBetterAuth = (request: Request) =>
+    identityRuntime.handler(request);
+  app.all('/api/auth', (context) =>
+    handleBetterAuth(context.req.raw),
+  );
+  app.all('/api/auth/*', (context) =>
+    handleBetterAuth(context.req.raw),
+  );
+
   let closePromise: Promise<void> | undefined;
   return {
-    app: createApp(configuration.DEPLOYMENT_MODE, {
-      clock,
-      createRequestId,
-      productionReadinessProbe: () => verifiedReadiness(adapter),
-      tenantSessionResolver: resolver,
-      projectService: service,
-    }),
+    app,
     close: () => {
       closePromise ??= Promise.resolve().then(() => adapter.close());
       return closePromise;
     },
   };
+}
+
+async function safelyCreateIdentityRuntime(
+  adapter: CustomerManagedRuntimeAdapter,
+  factory: (
+    config: CustomerManagedIdentityRuntimeConfig,
+  ) => BetterAuthRuntime,
+): Promise<BetterAuthRuntime> {
+  try {
+    return factory(adapter.identity);
+  } catch {
+    await Promise.resolve(adapter.close()).catch(() => undefined);
+    throw new ProductionCompositionError('INVALID_CUSTOMER_RUNTIME_ADAPTER');
+  }
 }
 
 async function createAdapter(
@@ -166,8 +213,37 @@ function parseAdapter(value: unknown): CustomerManagedRuntimeAdapter {
   if (
     !isRecord(value) ||
     value.kind !== 'customer-managed-production' ||
-    !isRecord(value.betterAuth) ||
-    typeof value.betterAuth.getSession !== 'function' ||
+    !isCustomerManagedIdentityRuntimeConfig(value.identity) ||
+    !hasFunctions(value.identityLifecycleService, [
+      'authenticate',
+      'registerPassword',
+      'completeEmailVerification',
+      'loginPassword',
+      'createPasskeyRegistrationOptions',
+      'verifyPasskeyRegistration',
+      'createPasskeyAuthenticationOptions',
+      'verifyPasskeyAuthentication',
+      'startOAuth',
+      'completeOAuth',
+      'getCurrentSession',
+      'listSessions',
+      'listDevices',
+      'revokeSession',
+      'revokeOtherSessions',
+      'revokeAllSessions',
+      'logout',
+      'requestPasswordRecovery',
+      'completePasswordRecovery',
+      'createRecentAuthProofWithPassword',
+      'requestAccountExport',
+      'getAccountExport',
+      'requestAccountDeletion',
+      'getAccountDeletion',
+      'cancelAccountDeletion',
+      'confirmAccountDeletion',
+    ]) ||
+    !hasFunctions(value.identityHttpSecurity, ['enforce']) ||
+    !hasFunctions(value.identityRateLimiter, ['consume']) ||
     typeof value.principalPoolForContext !== 'function' ||
     typeof value.checkReadiness !== 'function' ||
     typeof value.close !== 'function'
@@ -175,6 +251,16 @@ function parseAdapter(value: unknown): CustomerManagedRuntimeAdapter {
     throw new ProductionCompositionError('INVALID_CUSTOMER_RUNTIME_ADAPTER');
   }
   return value as CustomerManagedRuntimeAdapter;
+}
+
+function hasFunctions(
+  value: unknown,
+  names: readonly string[],
+): boolean {
+  return (
+    isRecord(value) &&
+    names.every((name) => typeof value[name] === 'function')
+  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
