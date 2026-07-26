@@ -1,22 +1,33 @@
 import {
   useEffect,
+  useMemo,
   useState,
   type ChangeEvent,
   type FormEvent,
 } from 'react';
-import type { Project } from './project-model.js';
+import type { Artifact, Project } from './project-model.js';
+import {
+  DraftStage,
+  type DraftStageCallbacks,
+  type DraftStagePage,
+} from './draft-stage.js';
+import { verifyDraft } from './draft-verification.js';
 import {
   EvidenceStage,
   type EvidenceStageCreateInput,
 } from './evidence-stage.js';
+import { ExportStage } from './export-stage.js';
 import {
   OutlineStage,
   type OutlineStageCallbacks,
 } from './outline-stage.js';
-import type {
-  SourceIngestionResult,
-  WorkbenchProjectFormInput,
-  WorkbenchService,
+import {
+  DRAFT_ARTIFACT_FORMAT,
+  readDraftArtifactPayload,
+  type DraftArtifactPayload,
+  type SourceIngestionResult,
+  type WorkbenchProjectFormInput,
+  type WorkbenchService,
 } from './workbench-service.js';
 
 export type StudentSurface = 'workbench' | 'identity';
@@ -86,6 +97,7 @@ export function missingTaskFields(
 }
 
 type SavePhase = 'idle' | 'saving' | 'saved' | 'failed';
+type DraftPreparationPhase = 'idle' | 'preparing' | 'failed';
 type MaterialStatus = 'selected' | 'parsing' | SourceIngestionResult['status'];
 
 interface MaterialProgress {
@@ -260,6 +272,164 @@ export function createOutlineStageCallbacks(
   };
 }
 
+export interface DraftArtifactView {
+  artifact: Artifact;
+  payload: DraftArtifactPayload;
+  pages: readonly DraftStagePage[];
+}
+
+export function findDraftArtifact(
+  project: Project | null,
+): DraftArtifactView | null {
+  if (project === null) {
+    return null;
+  }
+  const activeOutlineId =
+    project.activeOutlineId ??
+    project.outlines.find(
+      (outline) =>
+        outline.status === 'selected' || outline.status === 'locked',
+    )?.id ??
+    null;
+  if (activeOutlineId === null) {
+    return null;
+  }
+  for (const artifact of project.artifacts) {
+    if (
+      artifact.outlineId !== activeOutlineId ||
+      typeof artifact.payload !== 'object' ||
+      artifact.payload === null ||
+      Array.isArray(artifact.payload) ||
+      artifact.payload.format !== DRAFT_ARTIFACT_FORMAT
+    ) {
+      continue;
+    }
+    try {
+      const payload = readDraftArtifactPayload(artifact);
+      return {
+        artifact,
+        payload,
+        pages: payload.pages.map((record) => ({
+          outlineNodeId: record.outlineNodeId,
+          page: record.page,
+        })),
+      };
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+export function workbenchStageAvailable(
+  index: number,
+  project: Project | null,
+): boolean {
+  if (index === 0) {
+    return true;
+  }
+  if (index === 1) {
+    return project !== null;
+  }
+  if (index === 2) {
+    return (project?.sourceChunks.length ?? 0) > 0;
+  }
+  if (index === 3) {
+    return hasConfirmedVerifiedEvidence(project);
+  }
+  const activeOutline =
+    project?.outlines.find(
+      (outline) => outline.id === project.activeOutlineId,
+    ) ?? null;
+  if (index === 4) {
+    return (
+      activeOutline?.status === 'selected' ||
+      activeOutline?.status === 'locked'
+    );
+  }
+  if (index === 5) {
+    const draft = findDraftArtifact(project);
+    return (
+      draft !== null &&
+      draft.pages.length > 0 &&
+      (project?.verificationResults.some(
+        (result) => result.artifactId === draft.artifact.id,
+      ) ??
+        false)
+    );
+  }
+  return false;
+}
+
+export function createDraftStageCallbacks(
+  service: WorkbenchService,
+  project: Project,
+  draft: DraftArtifactView,
+  onProjectChange: (next: Project) => void,
+): DraftStageCallbacks {
+  const persist = async (operation: () => Promise<Project>) => {
+    let next = await operation();
+    const artifact = next.artifacts.find(
+      (candidate) => candidate.id === draft.artifact.id,
+    );
+    if (artifact !== undefined) {
+      const payload = readDraftArtifactPayload(artifact);
+      if (payload.pages.length > 0) {
+        next = await service.verifyDraftArtifact(
+          next.id,
+          artifact.id,
+        );
+      }
+    }
+    onProjectChange(next);
+  };
+  return {
+    onInsertPage: ({ outlineNodeId, index, page }) =>
+      persist(() =>
+        service.insertDraftPage(project.id, draft.artifact.id, {
+          outlineNodeId,
+          index,
+          page,
+        }),
+      ),
+    onUpdatePage: ({ pageId, patch }) =>
+      persist(() =>
+        service.updateDraftPage(
+          project.id,
+          draft.artifact.id,
+          pageId,
+          patch,
+        ),
+      ),
+    onDeletePage: ({ pageId }) =>
+      persist(() =>
+        service.deleteDraftPage(
+          project.id,
+          draft.artifact.id,
+          pageId,
+        ),
+      ),
+    onReorderPage: ({ pageId, targetIndex }) =>
+      persist(() =>
+        service.reorderDraftPage(
+          project.id,
+          draft.artifact.id,
+          pageId,
+          targetIndex,
+        ),
+      ),
+    onSetPageLocked: ({ pageId, locked }) =>
+      persist(() =>
+        service.setDraftPageLocked(
+          project.id,
+          draft.artifact.id,
+          pageId,
+          locked,
+        ),
+      ),
+  };
+}
+
 interface WorkflowStage {
   number: string;
   label: string;
@@ -388,6 +558,10 @@ export function WorkbenchShell({
   const [savePhase, setSavePhase] = useState<SavePhase>('idle');
   const [saveMessage, setSaveMessage] = useState('');
   const [activeStage, setActiveStage] = useState(0);
+  const [draftPreparationPhase, setDraftPreparationPhase] =
+    useState<DraftPreparationPhase>('idle');
+  const [draftPreparationMessage, setDraftPreparationMessage] =
+    useState('');
 
   useEffect(() => {
     if (service === undefined) {
@@ -430,7 +604,61 @@ export function WorkbenchShell({
     service === undefined || project === null
       ? null
       : createOutlineStageCallbacks(service, project, setProject);
+  const draftArtifact = useMemo(
+    () => findDraftArtifact(project),
+    [project],
+  );
+  const draftStageCallbacks =
+    service === undefined ||
+    project === null ||
+    draftArtifact === null
+      ? null
+      : createDraftStageCallbacks(
+          service,
+          project,
+          draftArtifact,
+          setProject,
+        );
+  const draftVerificationChecks = useMemo(
+    () =>
+      project === null || draftArtifact === null
+        ? []
+        : verifyDraft({
+            pages: draftArtifact.pages.map((record) => record.page),
+            taskDefinition: project.taskDefinition,
+            evidenceCards: project.evidenceCards,
+          }),
+    [draftArtifact, project],
+  );
   const activeHeader = stageHeaders[activeStage] ?? stageHeaders[0]!;
+
+  const openStage = (index: number) => {
+    if (
+      index !== 4 ||
+      project === null ||
+      service === undefined ||
+      project.activeOutlineId === null ||
+      draftArtifact !== null
+    ) {
+      setActiveStage(index);
+      return;
+    }
+    setActiveStage(index);
+    setDraftPreparationPhase('preparing');
+    setDraftPreparationMessage('');
+    void service
+      .ensureDraftArtifact(project.id, project.activeOutlineId)
+      .then((next) => {
+        setProject(next);
+        setDraftPreparationPhase('idle');
+        setSavePhase('saved');
+        setSaveMessage('初稿已写入当前项目');
+      })
+      .catch((reason: unknown) => {
+        setDraftPreparationPhase('failed');
+        setDraftPreparationMessage(errorMessage(reason));
+      });
+  };
 
   const handleMaterials = (event: ChangeEvent<HTMLInputElement>) => {
     const selected = Array.from(event.currentTarget.files ?? []);
@@ -618,20 +846,14 @@ export function WorkbenchShell({
           <ol aria-label="任务工作流">
             {workflowStages.map((stage, index) => {
               const active = index === activeStage;
-              const available =
-                index === 0 ||
-                (index === 1 && project !== null) ||
-                (index === 2 &&
-                  (project?.sourceChunks.length ?? 0) > 0) ||
-                (index === 3 &&
-                  hasConfirmedVerifiedEvidence(project));
+              const available = workbenchStageAvailable(index, project);
               return (
                 <li className={active ? 'is-active' : undefined} key={stage.number}>
                   <button
                     aria-current={active ? 'step' : undefined}
                     disabled={!available}
                     onClick={() => {
-                      setActiveStage(index);
+                      openStage(index);
                     }}
                     type="button"
                   >
@@ -997,6 +1219,64 @@ export function WorkbenchShell({
               {...outlineStageCallbacks}
               outlines={project.outlines}
               project={project}
+            />
+          ) : null}
+
+          {activeStage === 4 &&
+          project !== null &&
+          draftArtifact !== null &&
+          draftStageCallbacks !== null ? (
+            <DraftStage
+              {...draftStageCallbacks}
+              pages={draftArtifact.pages}
+              project={project}
+            />
+          ) : null}
+
+          {activeStage === 4 && draftArtifact === null ? (
+            <section
+              aria-live="polite"
+              className="material-empty"
+              role={
+                draftPreparationPhase === 'failed'
+                  ? 'alert'
+                  : 'status'
+              }
+            >
+              <span aria-hidden="true">◇</span>
+              <div>
+                <strong>
+                  {draftPreparationPhase === 'failed'
+                    ? '初稿工作区未准备好'
+                    : '正在准备初稿工作区'}
+                </strong>
+                <p>
+                  {draftPreparationPhase === 'failed'
+                    ? draftPreparationMessage
+                    : '结构和证据会保留原样，不会自动填入未经确认的内容。'}
+                </p>
+                {draftPreparationPhase === 'failed' ? (
+                  <button
+                    className="button button--primary"
+                    onClick={() => openStage(4)}
+                    type="button"
+                  >
+                    重试
+                  </button>
+                ) : null}
+              </div>
+            </section>
+          ) : null}
+
+          {activeStage === 5 &&
+          project !== null &&
+          draftArtifact !== null ? (
+            <ExportStage
+              draftPages={draftArtifact.pages.map(
+                (record) => record.page,
+              )}
+              project={project}
+              verificationChecks={draftVerificationChecks}
             />
           ) : null}
 

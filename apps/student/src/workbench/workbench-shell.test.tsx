@@ -4,10 +4,13 @@ import { executeOutlineStageAction } from './outline-stage.js';
 import type { Project } from './project-model.js';
 import {
   WorkbenchShell,
+  createDraftStageCallbacks,
   createOutlineStageCallbacks,
+  findDraftArtifact,
   hasConfirmedVerifiedEvidence,
   missingTaskFields,
   studentSurfaceForPath,
+  workbenchStageAvailable,
   type WorkbenchDraft,
 } from './workbench-shell.js';
 import type { WorkbenchService } from './workbench-service.js';
@@ -19,6 +22,9 @@ const CHUNK_ID = '01900000-0000-7000-8000-000000000604';
 const EVIDENCE_ID = '01900000-0000-7000-8000-000000000605';
 const OUTLINE_ID = '01900000-0000-7000-8000-000000000606';
 const NODE_ID = '01900000-0000-7000-8000-000000000607';
+const ARTIFACT_ID = '01900000-0000-7000-8000-000000000608';
+const PAGE_ID = '01900000-0000-7000-8000-000000000609';
+const VERIFICATION_ID = '01900000-0000-7000-8000-000000000610';
 const CREATED_AT = '2026-07-27T04:00:00.000Z';
 
 function outlineProject(
@@ -103,6 +109,122 @@ function outlineService(next: Project): WorkbenchService {
     verifyDraftArtifact: vi.fn().mockResolvedValue(next),
     ingestSourceFile: vi.fn(),
   };
+}
+
+function projectWithDraft(
+  overrides: Partial<Project> = {},
+): Project {
+  return outlineProject({
+    outlines: [
+      {
+        id: OUTLINE_ID,
+        version: 1,
+        createdAt: CREATED_AT,
+        updatedAt: CREATED_AT,
+        projectId: PROJECT_ID,
+        title: '证据结构',
+        status: 'selected',
+        lockedAt: null,
+        nodes: [
+          {
+            id: NODE_ID,
+            version: 1,
+            createdAt: CREATED_AT,
+            updatedAt: CREATED_AT,
+            position: 0,
+            title: '核心结论',
+            conclusion: '结论由课程材料支持。',
+            evidenceCardIds: [EVIDENCE_ID],
+            coveredRequirements: [],
+            rubricCriterionIds: [],
+            locked: false,
+          },
+        ],
+      },
+    ],
+    activeOutlineId: OUTLINE_ID,
+    artifacts: [
+      {
+        id: ARTIFACT_ID,
+        version: 1,
+        createdAt: CREATED_AT,
+        updatedAt: CREATED_AT,
+        projectId: PROJECT_ID,
+        outlineId: OUTLINE_ID,
+        outlineVersion: 1,
+        kind: 'presentation',
+        status: 'draft',
+        payload: {
+          format: 'zuocheng-draft-artifact',
+          formatVersion: 1,
+          id: ARTIFACT_ID,
+          version: 1,
+          createdAt: CREATED_AT,
+          updatedAt: CREATED_AT,
+          pages: [
+            {
+              id: PAGE_ID,
+              version: 1,
+              createdAt: CREATED_AT,
+              updatedAt: CREATED_AT,
+              outlineNodeId: NODE_ID,
+              page: {
+                id: PAGE_ID,
+                title: '核心结论',
+                conclusion: '结论由课程材料支持。',
+                body: '课程材料保留了页码和原文位置。',
+                evidenceCardIds: [EVIDENCE_ID],
+                citations: [
+                  {
+                    evidenceCardId: EVIDENCE_ID,
+                    label: '[1]',
+                  },
+                ],
+                visualNote: '使用证据卡片呈现来源。',
+                speakerNotes: '先说明结论，再展示来源。',
+                estimatedSeconds: 60,
+                locked: false,
+                rubricCriterionIds: [],
+                claims: [
+                  {
+                    id: 'claim-1',
+                    text: '结论由课程材料支持。',
+                    evidenceCardIds: [EVIDENCE_ID],
+                    numericFacts: [],
+                  },
+                ],
+              },
+            },
+          ],
+        },
+        blobId: null,
+        contentSha256: null,
+        staleBecause: [],
+        errorCode: null,
+      },
+    ],
+    verificationResults: [
+      {
+        id: VERIFICATION_ID,
+        version: 1,
+        createdAt: CREATED_AT,
+        updatedAt: CREATED_AT,
+        projectId: PROJECT_ID,
+        artifactId: ARTIFACT_ID,
+        artifactVersion: 1,
+        status: 'passed',
+        checkedAt: CREATED_AT,
+        checks: [],
+        summary: {
+          passed: 0,
+          warnings: 0,
+          failed: 0,
+          notRun: 0,
+        },
+      },
+    ],
+    ...overrides,
+  });
 }
 
 describe('WB-01 student workbench entry', () => {
@@ -323,6 +445,64 @@ describe('WB-01 student workbench entry', () => {
     for (const [savedProject] of onProjectChange.mock.calls) {
       expect(savedProject).toBe(next);
     }
+  });
+
+  it('opens draft and export only from persisted outline, page and verification state', () => {
+    const current = projectWithDraft();
+    const draft = findDraftArtifact(current);
+
+    expect(draft).not.toBeNull();
+    expect(draft?.artifact.id).toBe(ARTIFACT_ID);
+    expect(draft?.pages).toEqual([
+      expect.objectContaining({
+        outlineNodeId: NODE_ID,
+        page: expect.objectContaining({ id: PAGE_ID }),
+      }),
+    ]);
+    expect(workbenchStageAvailable(4, current)).toBe(true);
+    expect(workbenchStageAvailable(5, current)).toBe(true);
+    expect(
+      workbenchStageAvailable(5, {
+        ...current,
+        verificationResults: [],
+      }),
+    ).toBe(false);
+    expect(findDraftArtifact(null)).toBeNull();
+  });
+
+  it('persists draft callbacks and refreshes deterministic verification after a page write', async () => {
+    const current = projectWithDraft();
+    const next = projectWithDraft({ version: 2 });
+    const service = outlineService(next);
+    const onProjectChange = vi.fn();
+    const draft = findDraftArtifact(current);
+    if (draft === null) {
+      throw new Error('expected draft artifact');
+    }
+    const callbacks = createDraftStageCallbacks(
+      service,
+      current,
+      draft,
+      onProjectChange,
+    );
+
+    await callbacks.onUpdatePage({
+      outlineId: OUTLINE_ID,
+      pageId: PAGE_ID,
+      patch: { body: '更新后的正文。' },
+    });
+
+    expect(service.updateDraftPage).toHaveBeenCalledWith(
+      PROJECT_ID,
+      ARTIFACT_ID,
+      PAGE_ID,
+      { body: '更新后的正文。' },
+    );
+    expect(service.verifyDraftArtifact).toHaveBeenCalledWith(
+      PROJECT_ID,
+      ARTIFACT_ID,
+    );
+    expect(onProjectChange).toHaveBeenCalledWith(next);
   });
 
   it('preserves a real lock rejection for the outline stage alert', async () => {
