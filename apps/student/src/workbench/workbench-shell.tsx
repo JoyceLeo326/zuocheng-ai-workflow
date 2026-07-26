@@ -267,6 +267,12 @@ interface WorkflowStage {
   prerequisite: string | null;
 }
 
+interface StageHeader {
+  kicker: string;
+  title: string;
+  description: string;
+}
+
 const workflowStages: WorkflowStage[] = [
   {
     number: '01',
@@ -305,6 +311,39 @@ const workflowStages: WorkflowStage[] = [
     prerequisite: '需先完成编辑核验',
   },
 ];
+
+const stageHeaders: readonly StageHeader[] = [
+  {
+    kicker: '01 / DEFINE',
+    title: '明确这次要交什么',
+    description: '填写任务要求、评分标准和交付限制。',
+  },
+  {
+    kicker: '02 / SOURCES',
+    title: '检查材料是否解析完整',
+    description: '确认文件、页码和原文片段准确无误。',
+  },
+  {
+    kicker: '03 / EVIDENCE',
+    title: '从原文中选取可引用证据',
+    description: '核对原文位置、用途和引用格式后再保存。',
+  },
+  {
+    kicker: '04 / OUTLINE',
+    title: '组织结论、证据与顺序',
+    description: '每个节点都绑定证据，并覆盖任务要求。',
+  },
+  {
+    kicker: '05 / DRAFT',
+    title: '逐页编辑并核验',
+    description: '修改内容、讲稿与视觉提示，及时修正问题。',
+  },
+  {
+    kicker: '06 / EXPORT',
+    title: '生成正式交付文件',
+    description: '下载并核对需要提交的文件与项目记录。',
+  },
+] as const;
 
 function formatFileSize(bytes: number) {
   if (bytes < 1_024) {
@@ -391,6 +430,7 @@ export function WorkbenchShell({
     service === undefined || project === null
       ? null
       : createOutlineStageCallbacks(service, project, setProject);
+  const activeHeader = stageHeaders[activeStage] ?? stageHeaders[0]!;
 
   const handleMaterials = (event: ChangeEvent<HTMLInputElement>) => {
     const selected = Array.from(event.currentTarget.files ?? []);
@@ -546,11 +586,9 @@ export function WorkbenchShell({
 
       <header className="workbench-project-header">
         <div>
-          <p className="eyebrow">New task / 新任务</p>
-          <h1>把交付先定义清楚。</h1>
-          <p>
-            填写任务要求并添加材料。证据、结构与导出会在所需信息准备好后开放。
-          </p>
+          <p className="eyebrow">{activeHeader.kicker}</p>
+          <h1>{activeHeader.title}</h1>
+          <p>{activeHeader.description}</p>
         </div>
         <div className="workbench-project-status" role="status">
           <span aria-hidden="true" />
@@ -601,7 +639,7 @@ export function WorkbenchShell({
                     <span className="workflow-stage__copy">
                       <strong>{stage.label}</strong>
                       <small>{stage.description}</small>
-                      {stage.prerequisite === null ? null : (
+                      {available || stage.prerequisite === null ? null : (
                         <em>{stage.prerequisite}</em>
                       )}
                     </span>
@@ -616,10 +654,8 @@ export function WorkbenchShell({
         </aside>
 
         <section aria-label="任务工作区" className="workbench-canvas">
-          <header
-            className="workbench-section-header"
-            hidden={activeStage >= 2}
-          >
+          {activeStage < 2 ? (
+          <header className="workbench-section-header">
             <div>
               <span className="section-kicker">
                 {activeStage === 0 ? '01 / DEFINE' : '02 / SOURCES'}
@@ -641,10 +677,11 @@ export function WorkbenchShell({
                 : `${String(project?.sourceChunks.length ?? 0)} 个片段`}
             </span>
           </header>
+          ) : null}
 
+          {activeStage === 0 ? (
           <form
             className="task-definition-form"
-            hidden={activeStage !== 0}
             id="task-definition-form"
             onSubmit={(event) => {
               void handleSave(event);
@@ -784,11 +821,12 @@ export function WorkbenchShell({
               />
             </div>
           </form>
+          ) : null}
 
+          {activeStage < 2 ? (
           <section
             aria-labelledby="materials-title"
             className="material-panel"
-            hidden={activeStage >= 2}
           >
             <header>
               <div>
@@ -921,6 +959,7 @@ export function WorkbenchShell({
               </ol>
             ) : null}
           </section>
+          ) : null}
 
           {activeStage === 2 && project !== null ? (
             <EvidenceStage
@@ -1040,7 +1079,13 @@ export function WorkbenchShell({
                 ? '材料解析'
                 : activeStage === 1
                   ? '选择证据'
-                  : '组织结构'}
+                  : activeStage === 2
+                    ? '组织结构'
+                    : activeStage === 3
+                      ? '编辑核验'
+                      : activeStage === 4
+                        ? '正式导出'
+                        : '完成交付'}
             </strong>
             <p>
               {activeStage === 0
