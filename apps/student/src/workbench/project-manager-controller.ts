@@ -9,7 +9,6 @@ import {
 import {
   PROJECT_SCHEMA_VERSION,
   parseProject,
-  type JsonValue,
   type Project,
 } from './project-model.js';
 import {
@@ -247,17 +246,31 @@ export function createProjectManagerController(
 }
 
 export function mapManagedProject(project: Project): ManagedProject {
-  const draftPageCount = project.artifacts.reduce((total, artifact) => {
-    if (
-      typeof artifact.payload !== 'object' ||
-      artifact.payload === null ||
-      Array.isArray(artifact.payload)
-    ) {
-      return total;
-    }
-    const pages = (artifact.payload as Record<string, JsonValue>).pages;
-    return total + (Array.isArray(pages) ? pages.length : 0);
-  }, 0);
+  const activeOutlineId =
+    project.activeOutlineId ??
+    project.outlines.find(
+      (outline) =>
+        outline.status === 'selected' ||
+        outline.status === 'locked',
+    )?.id ??
+    null;
+  const draftArtifact = project.artifacts.find(
+    (artifact) =>
+      (activeOutlineId === null ||
+        artifact.outlineId === activeOutlineId) &&
+      typeof artifact.payload === 'object' &&
+      artifact.payload !== null &&
+      !Array.isArray(artifact.payload) &&
+      artifact.payload.format === 'zuocheng-draft-artifact',
+  );
+  const draftPageCount =
+    draftArtifact !== undefined &&
+    typeof draftArtifact.payload === 'object' &&
+    draftArtifact.payload !== null &&
+    !Array.isArray(draftArtifact.payload) &&
+    Array.isArray(draftArtifact.payload.pages)
+      ? draftArtifact.payload.pages.length
+      : 0;
   return Object.freeze({
     id: project.id,
     title: project.title,
