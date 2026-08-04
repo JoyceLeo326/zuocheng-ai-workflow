@@ -70,6 +70,11 @@
     action: $('[data-task-day-action]', button)?.textContent || '',
     output: $('[data-task-day-output]', button)?.textContent || '',
   }));
+  const initialJourneyRows = $$('[data-journey-beat]').map((beat) => ({
+    stage: $('span', beat)?.textContent || '',
+    title: $('strong', beat)?.textContent || '',
+    copy: $('p', beat)?.textContent || '',
+  }));
   let taskState = null;
 
   const localToday = () => {
@@ -83,6 +88,9 @@
     deadline: taskForm.elements.namedItem('deadline').value,
     deliverable: taskForm.elements.namedItem('deliverable').value,
     constraints: taskForm.elements.namedItem('constraints').value,
+    learnerRole: taskForm.elements.namedItem('learnerRole').value,
+    priority: taskForm.elements.namedItem('priority').value,
+    dailyMinutes: taskForm.elements.namedItem('dailyMinutes').value,
   });
 
   const fillTaskInput = (input) => {
@@ -101,6 +109,20 @@
     }
   };
 
+  const renderTaskJourney = (input, completed) => {
+    if (!window.ZuochengPlanner?.createJourney) return;
+    const journey = window.ZuochengPlanner.createJourney(input, completed);
+    $$('[data-journey-beat]').forEach((beat, index) => {
+      const story = journey[index];
+      if (!story) return;
+      $('span', beat).textContent = story.stage;
+      $('strong', beat).textContent = story.title;
+      $('p', beat).textContent = story.copy;
+      beat.classList.toggle('is-current', story.stage === '选择');
+      beat.classList.toggle('is-complete', story.stage === '结果' && completed.every(Boolean));
+    });
+  };
+
   const renderEmptyTask = () => {
     taskDayButtons.forEach((button, index) => {
       const row = initialTaskRows[index];
@@ -116,6 +138,13 @@
     $('[data-task-plan-title]').textContent = '你的 7 天推进路径';
     $('[data-task-progress]').textContent = '0 / 7';
     $('[data-task-progress-bar]').style.width = '0%';
+    $$('[data-journey-beat]').forEach((beat, index) => {
+      const story = initialJourneyRows[index];
+      $('span', beat).textContent = story.stage;
+      $('strong', beat).textContent = story.title;
+      $('p', beat).textContent = story.copy;
+      beat.classList.remove('is-current', 'is-complete');
+    });
     if (exportPlanButton) exportPlanButton.disabled = true;
   };
 
@@ -139,6 +168,7 @@
     $('[data-task-plan-title]').textContent = `${taskState.input.taskName} · 7 天计划`;
     $('[data-task-progress]').textContent = `${completedCount} / 7`;
     $('[data-task-progress-bar]').style.width = `${(completedCount / 7) * 100}%`;
+    renderTaskJourney(taskState.input, taskState.completed);
     if (exportPlanButton) exportPlanButton.disabled = false;
     if (taskStatus && message) taskStatus.textContent = message;
   };
