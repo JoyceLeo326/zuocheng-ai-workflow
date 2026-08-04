@@ -6,13 +6,22 @@ import test from 'node:test';
 const sourceRoot = resolve('apps/marketing');
 const outputRoot = join(sourceRoot, 'dist');
 
-for (const relativePath of ['planner.js', 'cost-policy.js']) {
+for (const relativePath of ['cost-policy.js']) {
   test(`${relativePath} 无损迁入营销应用`, async () => {
     const original = await readFile(resolve(relativePath));
     const migrated = await readFile(join(sourceRoot, relativePath));
     assert.deepEqual(migrated, original);
   });
 }
+
+test('营销应用保留旧规划调用并扩展用户化任务故事', async () => {
+  const source = await readFile(join(sourceRoot, 'planner.js'), 'utf8');
+  assert.match(source, /createPlan/u);
+  assert.match(source, /createMarkdown/u);
+  assert.match(source, /createJourney/u);
+  assert.match(source, /learnerRole/u);
+  assert.match(source, /dailyMinutes/u);
+});
 
 test('课程手册改为同源真实下载且构建产物保留文件', async () => {
   const html = await readFile(join(sourceRoot, 'index.html'), 'utf8');
