@@ -74,7 +74,7 @@ function props(
 
 describe('AISettingsPanel', () => {
   it('renders a keyboard-native, masked BYOK form without exposing a stored key', () => {
-    const storedKey = 'sk-stored-must-not-render';
+    const storedKey = 'fixture-token-03';
     const html = renderToStaticMarkup(
       <AISettingsPanel
         {...props({
@@ -126,7 +126,7 @@ describe('AISettingsPanel', () => {
       {
         endpoint: 'https://models.example.test/v1',
         model: 'example-chat',
-        apiKey: 'sk-draft-only',
+        apiKey: 'fixture-token-04',
         persistence: 'session',
       },
       new AbortController().signal,
@@ -154,7 +154,7 @@ describe('AISettingsPanel', () => {
         displayName: '我的模型',
         endpoint: 'https://models.example.test/v1',
         model: 'example-chat',
-        apiKey: 'sk-draft-only',
+        apiKey: 'fixture-token-04',
       },
       expect.any(AbortSignal),
     );
@@ -166,7 +166,7 @@ describe('AISettingsPanel', () => {
   });
 
   it('uses an already saved key for testing and reports a safe error after awaiting rejection', async () => {
-    const leakedMessage = 'provider echoed sk-do-not-show';
+    const leakedMessage = 'provider echoed fixture-token-05';
     const gate = deferred();
     const onTestConnection = vi.fn(() => gate.promise);
     const feedback: AISettingsFeedback[] = [];
@@ -174,7 +174,7 @@ describe('AISettingsPanel', () => {
       providerId: 'personal-openai-compatible',
       displayName: '我的模型',
       credentials: credentialStore({
-        apiKey: 'sk-saved',
+        apiKey: 'fixture-token-06',
         persistence: 'session',
       }),
       onSaveConfig: vi.fn(),
@@ -198,7 +198,7 @@ describe('AISettingsPanel', () => {
     await operation;
 
     expect(onTestConnection).toHaveBeenCalledWith(
-      expect.objectContaining({ apiKey: 'sk-saved' }),
+      expect.objectContaining({ apiKey: 'fixture-token-06' }),
       expect.any(AbortSignal),
     );
     expect(feedback.at(-1)).toEqual({
@@ -206,7 +206,7 @@ describe('AISettingsPanel', () => {
       message: '连接失败，请检查模型地址、模型名称和密钥。',
     });
     expect(JSON.stringify(feedback)).not.toContain(leakedMessage);
-    expect(JSON.stringify(feedback)).not.toContain('sk-saved');
+    expect(JSON.stringify(feedback)).not.toContain('fixture-token-06');
   });
 
   it('persists only on explicit save and keeps the key out of provider config', async () => {
@@ -225,7 +225,7 @@ describe('AISettingsPanel', () => {
     const operation = actions.save({
       endpoint: 'https://models.example.test/v1',
       model: 'example-chat',
-      apiKey: 'sk-explicit-save',
+      apiKey: 'fixture-token-07',
       persistence: 'local',
     });
 
@@ -239,7 +239,7 @@ describe('AISettingsPanel', () => {
       model: 'example-chat',
     });
     expect(JSON.stringify(onSaveConfig.mock.calls)).not.toContain(
-      'sk-explicit-save',
+      'fixture-token-07',
     );
     expect(credentials.save).not.toHaveBeenCalled();
 
@@ -247,7 +247,7 @@ describe('AISettingsPanel', () => {
     await expect(operation).resolves.toBeUndefined();
     expect(credentials.save).toHaveBeenCalledWith({
       providerId: 'personal-openai-compatible',
-      apiKey: 'sk-explicit-save',
+      apiKey: 'fixture-token-07',
       persistence: 'local',
     });
   });
@@ -255,7 +255,7 @@ describe('AISettingsPanel', () => {
   it('deletes the credential and then awaits injected config deletion', async () => {
     const gate = deferred();
     const credentials = credentialStore({
-      apiKey: 'sk-delete',
+      apiKey: 'fixture-token-08',
       persistence: 'local',
     });
     const onDeleteConfig = vi.fn(() => gate.promise);
@@ -303,7 +303,7 @@ describe('AISettingsPanel', () => {
       {
         endpoint: 'http://models.example.test/v1?api_key=leak',
         model: 'example-chat',
-        apiKey: 'sk-draft',
+        apiKey: 'fixture-token-09',
         persistence: 'session',
       },
       new AbortController().signal,
@@ -315,7 +315,7 @@ describe('AISettingsPanel', () => {
     expect(onTestConnection).not.toHaveBeenCalled();
     expect(feedback.at(-1)?.kind).toBe('error');
     expect(JSON.stringify(feedback)).not.toContain('api_key');
-    expect(JSON.stringify(feedback)).not.toContain('sk-draft');
+    expect(JSON.stringify(feedback)).not.toContain('fixture-token-09');
   });
 
   it('passes cancellation to the callback and reports it without a provider error', async () => {
@@ -345,7 +345,7 @@ describe('AISettingsPanel', () => {
       {
         endpoint: 'https://models.example.test/v1',
         model: 'example-chat',
-        apiKey: 'sk-cancelled',
+        apiKey: 'fixture-token-10',
         persistence: 'session',
       },
       controller.signal,
@@ -356,7 +356,7 @@ describe('AISettingsPanel', () => {
 
     await vi.waitFor(() => {
       expect(onTestConnection).toHaveBeenCalledWith(
-        expect.objectContaining({ apiKey: 'sk-cancelled' }),
+        expect.objectContaining({ apiKey: 'fixture-token-10' }),
         controller.signal,
       );
     });
@@ -368,7 +368,7 @@ describe('AISettingsPanel', () => {
       message: '连接测试已取消。',
     });
     expect(JSON.stringify(feedback)).not.toContain('secret');
-    expect(JSON.stringify(feedback)).not.toContain('sk-cancelled');
+    expect(JSON.stringify(feedback)).not.toContain('fixture-token-10');
   });
 
   it('ships visible focus, narrow-screen, reduced-motion and forced-color rules', () => {
