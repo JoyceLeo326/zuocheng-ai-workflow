@@ -19,10 +19,11 @@
     "dev": "pnpm --parallel --filter './apps/*' --filter './services/*' dev",
     "lint": "eslint . --max-warnings=0",
     "pretest": "pnpm --filter @zuocheng/contracts build && pnpm --filter @zuocheng/config build && pnpm --filter @zuocheng/db build && pnpm --filter @zuocheng/marketing build",
+    "security:gate": "node scripts/check-secret-shapes.mjs",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test && node --test qa/*.mjs",
     "verify:vercel-bundle": "node scripts/verify-vercel-bundle.mjs",
-    "verify": "pnpm lint && pnpm typecheck && pnpm test && pnpm build"
+    "verify": "pnpm security:gate && pnpm lint && pnpm typecheck && pnpm test && pnpm build"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

@@ -41,7 +41,7 @@ const CONNECTION_INPUT = {
   displayName: OPENAI_COMPATIBLE_DISPLAY_NAME,
   endpoint: 'https://models.example.test/v1',
   model: 'example-chat',
-  apiKey: 'sk-connection-only',
+  apiKey: 'fixture-token-17',
 } as const;
 
 function successfulResponse(): Response {
