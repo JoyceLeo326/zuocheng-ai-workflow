@@ -38,6 +38,9 @@ test("hero includes a complete task launchpad and real workbench route", () => {
     ["deadline", "截止日期"],
     ["deliverable", "交付形式"],
     ["constraints", "关键约束"],
+    ["learnerRole", "当前阶段"],
+    ["priority", "当前重点"],
+    ["dailyMinutes", "每天投入"],
   ]) {
     assert.match(indexHtml, new RegExp(`name=["']${name}["']`, "i"), `missing ${label} field`);
   }
@@ -46,11 +49,8 @@ test("hero includes a complete task launchpad and real workbench route", () => {
   assert.equal(countAttribute(indexHtml, "data-task-day"), 7, "launchpad needs seven day rows");
   assert.match(indexHtml, /data-export-plan/i, "launchpad needs Markdown export");
   assert.match(indexHtml, /data-reset-task/i, "launchpad needs a reset action");
-  assert.match(
-    indexHtml,
-    /计划按规则生成，不含 AI 内容建议/,
-    "launchpad must accurately distinguish its rule-generated plan from AI content",
-  );
+  assert.match(indexHtml, /data-task-journey/, "launchpad needs a live task-story region");
+  assert.doesNotMatch(indexHtml, /零成本|无需登录|评委|MVP/, "public UI must stay task focused");
 });
 
 test("planning engine produces a deterministic deadline-aware seven-day plan", () => {
@@ -88,7 +88,8 @@ test("planning engine produces a deterministic deadline-aware seven-day plan", (
   assert.match(markdown, /关键约束：只用一手材料；每天 45 分钟/);
   assert.equal((markdown.match(/^- \[[ x]\] 第 \d 天/gm) ?? []).length, 7);
   assert.equal((markdown.match(/^- \[x\]/gm) ?? []).length, 2);
-  assert.match(markdown, /本计划由浏览器本地规则生成，并非 AI 模型输出/);
+  assert.match(markdown, /交付前请回到原始资料核验事实、引用与最终格式/);
+  assert.match(markdown, /## 任务故事/);
 });
 
 test("urgent deadlines keep every step between today and the deadline", () => {

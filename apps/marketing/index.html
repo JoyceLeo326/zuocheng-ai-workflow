@@ -108,12 +108,38 @@
           <p class="section-index">立即开始 / 01</p>
           <h2 id="task-launchpad-title">先写清楚你要交什么。</h2>
         </div>
-        <p>任务越明确，后面的取证、写作和核验越可靠。填写四项信息，立即得到一条七天推进路径。</p>
+        <p>任务越明确，后面的取证、写作和核验越可靠。补齐你的阶段、重点与时间，立即得到一条属于自己的七天推进路径。</p>
       </header>
 
       <div class="launchpad-grid reveal" data-delay="80">
         <form class="task-form" data-task-form>
           <div class="form-title"><span>任务输入</span><b>□ → ■</b></div>
+          <div class="profile-grid" aria-label="你的任务节奏">
+            <label>
+              <span>当前阶段</span>
+              <select name="learnerRole">
+                <option value="undergraduate">本科生</option>
+                <option value="postgraduate">研究生</option>
+                <option value="early-career">初入职场</option>
+              </select>
+            </label>
+            <label>
+              <span>当前重点</span>
+              <select name="priority">
+                <option value="evidence">证据可信</option>
+                <option value="structure">结构清晰</option>
+                <option value="delivery">按时交付</option>
+              </select>
+            </label>
+            <label>
+              <span>每天投入</span>
+              <select name="dailyMinutes">
+                <option value="20">20 分钟</option>
+                <option value="35" selected>35 分钟</option>
+                <option value="60">60 分钟</option>
+              </select>
+            </label>
+          </div>
           <label>
             <span>任务名称</span>
             <input type="text" name="taskName" maxlength="60" autocomplete="off" placeholder="例如：完成学院创新赛答辩" required>
@@ -154,10 +180,22 @@
           <footer class="task-plan-actions">
             <button type="button" data-export-plan disabled>下载 Markdown <span aria-hidden="true">↓</span></button>
             <button type="button" data-reset-task>重置</button>
-            <small>计划按规则生成，不含 AI 内容建议；进度会自动保存。</small>
+            <small>完成一格，任务故事就向最终交付推进一步。</small>
           </footer>
         </section>
       </div>
+      <section class="task-journey reveal" data-task-journey aria-labelledby="task-journey-title">
+        <header>
+          <p class="section-index">你的任务故事 / LIVE</p>
+          <h3 id="task-journey-title">从一项待办，到一份能交的成果。</h3>
+        </header>
+        <ol aria-live="polite">
+          <li data-journey-beat><span>起点</span><strong>先带来一项真实任务</strong><p>写下截止时间与交付形式，故事从你的输入开始。</p></li>
+          <li data-journey-beat><span>冲突</span><strong>看清限制与最重要的标准</strong><p>时间、资料和质量要求会改变每天的推进方式。</p></li>
+          <li data-journey-beat><span>选择</span><strong>今天只完成一个可检查结果</strong><p>勾选行动计划，让下一步始终清楚。</p></li>
+          <li data-journey-beat><span>结果</span><strong>带走完整行动计划</strong><p>完成后下载包含进度与核验提醒的交付路线。</p></li>
+        </ol>
+      </section>
     </section>
 
     <section class="value section-shell">
