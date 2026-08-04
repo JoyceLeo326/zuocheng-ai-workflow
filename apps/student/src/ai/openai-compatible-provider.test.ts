@@ -124,7 +124,7 @@ async function invokeWith(
 
 describe('OpenAI-compatible browser provider', () => {
   it('sends the key only in Authorization and parses structured JSON with usage', async () => {
-    const apiKey = 'sk-header-only';
+    const apiKey = 'fixture-token-18';
     const fetcher = vi.fn<OpenAICompatibleFetch>(async () =>
       jsonResponse(200, {
         choices: [
@@ -241,7 +241,7 @@ describe('OpenAI-compatible browser provider', () => {
         displayName: 'Remote HTTP',
         endpoint: 'http://models.example.test/v1',
         model: 'model',
-        credentials: credentialStore('sk-local'),
+        credentials: credentialStore('fixture-token-19'),
         fetcher: vi.fn<OpenAICompatibleFetch>(),
       }),
     ).toThrowError(
@@ -256,12 +256,12 @@ describe('OpenAI-compatible browser provider', () => {
         displayName: 'Localhost HTTP',
         endpoint: 'http://localhost:11434/v1',
         model: 'model',
-        credentials: credentialStore('sk-local'),
+        credentials: credentialStore('fixture-token-19'),
         fetcher: vi.fn<OpenAICompatibleFetch>(),
       }).descriptor.endpoint,
     ).toBe('http://localhost:11434/v1');
 
-    const querySecret = 'sk-query-secret';
+    const querySecret = 'fixture-token-20';
     let thrown: unknown;
     try {
       createOpenAICompatibleProvider({
@@ -270,7 +270,7 @@ describe('OpenAI-compatible browser provider', () => {
         endpoint:
           `https://models.example.test/v1?key=${querySecret}`,
         model: 'model',
-        credentials: credentialStore('sk-local'),
+        credentials: credentialStore('fixture-token-19'),
         fetcher: vi.fn<OpenAICompatibleFetch>(),
       });
     } catch (error) {
@@ -313,12 +313,12 @@ describe('OpenAI-compatible browser provider', () => {
       headers,
       retryAfterSeconds,
     }) => {
-      const bodySecret = 'sk-provider-body-secret';
+      const bodySecret = 'fixture-token-21';
       const error = await invokeWith(
         vi.fn(async () =>
           jsonResponse(status, { error: { message: bodySecret } }, headers),
         ),
-        { apiKey: 'sk-request' },
+        { apiKey: 'fixture-token-22' },
       ).catch((reason: unknown) => reason);
 
       expect(error).toBeInstanceOf(OpenAICompatibleProviderError);
@@ -334,12 +334,12 @@ describe('OpenAI-compatible browser provider', () => {
   );
 
   it('maps network failures and malformed provider payloads to safe errors', async () => {
-    const networkSecret = 'sk-network-error-secret';
+    const networkSecret = 'fixture-token-23';
     const networkError = await invokeWith(
       vi.fn(async () => {
         throw new TypeError(networkSecret);
       }),
-      { apiKey: 'sk-request' },
+      { apiKey: 'fixture-token-22' },
     ).catch((reason: unknown) => reason);
     expect(networkError).toMatchObject({
       code: 'PROVIDER_ERROR',
@@ -354,7 +354,7 @@ describe('OpenAI-compatible browser provider', () => {
           choices: [{ message: { content: 'not valid JSON' } }],
         }),
       ),
-      { apiKey: 'sk-request' },
+      { apiKey: 'fixture-token-22' },
     ).catch((reason: unknown) => reason);
     expect(invalidResponse).toMatchObject({
       code: 'PROVIDER_ERROR',
@@ -384,7 +384,7 @@ describe('OpenAI-compatible browser provider', () => {
       displayName: 'Student provider',
       endpoint: 'https://models.example.test/v1',
       model: 'compatible-model',
-      credentials: credentialStore('sk-request'),
+      credentials: credentialStore('fixture-token-22'),
       fetcher: abortingFetcher,
       timeoutMs: 1_000,
     });
@@ -398,7 +398,7 @@ describe('OpenAI-compatible browser provider', () => {
     });
 
     const timeoutError = await invokeWith(abortingFetcher, {
-      apiKey: 'sk-request',
+      apiKey: 'fixture-token-22',
       timeoutMs: 5,
     }).catch((reason: unknown) => reason);
     expect(timeoutError).toMatchObject({

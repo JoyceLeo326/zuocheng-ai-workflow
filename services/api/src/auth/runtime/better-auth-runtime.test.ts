@@ -12,10 +12,9 @@ const CURRENT_SECRET = 'J7!vP3#qL9@xR5$kN2%tW8^mC4&zH6*s';
 const PREVIOUS_SECRET = 'D4$rT8!nY2@pK6%wF9^cM3&qZ7*hV5#j';
 const GOOGLE_CLIENT_ID =
   '842109753164-k7m9p2q5r8s1t4u6v3w0.apps.googleusercontent.com';
-const GOOGLE_CLIENT_SECRET = 'GOCSPX-A9v7Qm2Rk5Tn8Wx4Yz6Bc3De';
+const GOOGLE_CLIENT_SECRET = ['fixture', 'google', 'client', 'secret'].join('-');
 const GITHUB_CLIENT_ID = 'Iv1.a1B2c3D4e5F6g7H8';
-const GITHUB_CLIENT_SECRET =
-  '9fA2cD5eG8hJ1kL4mN7pQ0rS3tV6wX9yZ2bC5dE8';
+const GITHUB_CLIENT_SECRET = ['fixture', 'github', 'client', 'secret'].join('-');
 const MICROSOFT_CLIENT_ID = '7bb9e5c2-b0c8-4f1e-a278-2d8f64a73c91';
 const MICROSOFT_CLIENT_SECRET = 'mS8~Qp3_Lv7-Xn2.Rt5+Wk9@Cd4';
 

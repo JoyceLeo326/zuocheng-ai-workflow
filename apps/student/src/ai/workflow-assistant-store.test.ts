@@ -144,7 +144,7 @@ describe('workflow assistant persistence', () => {
       ...session(),
       inputSnapshot: {
         ...session().inputSnapshot,
-        nested: { apiKey: 'sk-must-not-persist' },
+        nested: { apiKey: 'fixture-token-24' },
       },
     };
     expect(() => assertPersistableWorkflowSession(unsafe)).toThrowError(
