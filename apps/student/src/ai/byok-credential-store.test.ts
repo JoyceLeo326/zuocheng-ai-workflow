@@ -40,7 +40,7 @@ describe('current-device BYOK credential store', () => {
       sessionStorage: session,
       localStorage: local,
     });
-    const apiKey = 'sk-session-only';
+    const apiKey = 'fixture-token-11';
 
     expect(session.length).toBe(0);
     expect(local.length).toBe(0);
@@ -70,17 +70,17 @@ describe('current-device BYOK credential store', () => {
 
     store.save({
       providerId: 'provider-1',
-      apiKey: 'sk-first-session',
+      apiKey: 'fixture-token-12',
     });
     store.save({
       providerId: 'provider-1',
-      apiKey: 'sk-explicit-local',
+      apiKey: 'fixture-token-13',
       persistence: 'local',
     });
 
     expect(session.length).toBe(0);
     expect(local.length).toBe(1);
-    expect(store.resolve('provider-1')).toBe('sk-explicit-local');
+    expect(store.resolve('provider-1')).toBe('fixture-token-13');
     expect(store.persistenceOf('provider-1')).toBe('local');
 
     store.remove('provider-1');
@@ -98,11 +98,11 @@ describe('current-device BYOK credential store', () => {
     });
     first.save({
       providerId: 'session-provider',
-      apiKey: 'sk-tab',
+      apiKey: 'fixture-token-14',
     });
     first.save({
       providerId: 'local-provider',
-      apiKey: 'sk-device',
+      apiKey: 'fixture-token-15',
       persistence: 'local',
     });
 
@@ -112,11 +112,11 @@ describe('current-device BYOK credential store', () => {
     });
 
     expect(nextTab.resolve('session-provider')).toBeNull();
-    expect(nextTab.resolve('local-provider')).toBe('sk-device');
+    expect(nextTab.resolve('local-provider')).toBe('fixture-token-15');
   });
 
   it('fails closed when storage is unavailable without echoing the credential', () => {
-    const apiKey = 'sk-never-in-error';
+    const apiKey = 'fixture-token-16';
     const failingStorage: Storage = {
       get length() {
         return 0;

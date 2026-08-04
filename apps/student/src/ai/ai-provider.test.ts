@@ -200,7 +200,7 @@ describe('AI provider descriptors', () => {
       }),
     );
 
-    const plaintext = 'sk-plaintext-must-not-escape';
+    const plaintext = 'fixture-token-01';
     let thrown: unknown;
     try {
       defineAIProvider({
@@ -379,7 +379,7 @@ describe('AI run orchestration', () => {
     });
     expect(invoke).not.toHaveBeenCalled();
 
-    const plaintext = 'sk-never-store-this';
+    const plaintext = 'fixture-token-02';
     let thrown: unknown;
     try {
       runs.enqueue({
