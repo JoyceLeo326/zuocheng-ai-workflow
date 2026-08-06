@@ -19,6 +19,37 @@
     structure: "结构清晰",
     delivery: "按时交付",
   });
+  const FEEDBACK_LABELS = Object.freeze({
+    "too-slow": "推进节奏太慢",
+    "too-dense": "信息密度太高",
+    "not-enough-evidence": "关键判断证据不足",
+  });
+  const ROUTES = Object.freeze([
+    Object.freeze({
+      id: "evidence",
+      label: "证据先行",
+      promise: "先把每个关键判断接回原始材料，再进入写作。",
+      tradeoff: "核对更扎实，但前两天推进会更慢。",
+      firstMove: "先建立来源清单，并为核心结论各确认一条可回查原文。",
+      sceneIds: Object.freeze([11, 12]),
+    }),
+    Object.freeze({
+      id: "structure",
+      label: "结构先行",
+      promise: "先比较三种讲述骨架，再按听众问题填入内容。",
+      tradeoff: "叙事更清楚，但锁定前必须补齐来源缺口。",
+      firstMove: "先写出听众最关心的三个问题，再排列页面顺序。",
+      sceneIds: Object.freeze([13, 14]),
+    }),
+    Object.freeze({
+      id: "delivery",
+      label: "交付先行",
+      promise: "先守住最小可交版本，再把剩余时间用于核验。",
+      tradeoff: "更容易按时完成，但视觉润色与扩展内容会被压缩。",
+      firstMove: "先冻结三项必交内容，把可选内容移到第二轮。",
+      sceneIds: Object.freeze([15, 16]),
+    }),
+  ]);
 
   function clean(value) {
     return String(value ?? "").trim().replace(/\s+/g, " ");
@@ -168,6 +199,124 @@
     ];
   }
 
+  function normalizeFeedback(feedback = []) {
+    if (!Array.isArray(feedback)) return [];
+    return feedback
+      .map((item) => typeof item === "string" ? item : item?.type)
+      .filter((type) => Object.hasOwn(FEEDBACK_LABELS, type));
+  }
+
+  function createCandidates(input, feedback = []) {
+    const task = normalizeInput(input);
+    const feedbackTypes = normalizeFeedback(feedback);
+    const scores = { evidence: 50, structure: 50, delivery: 50 };
+    const reasons = {
+      evidence: [],
+      structure: [],
+      delivery: [],
+    };
+
+    scores[task.priority] += 24;
+    reasons[task.priority].push(`你把“${PRIORITY_LABELS[task.priority]}”放在首位`);
+
+    if (task.learnerRole === "postgraduate") {
+      scores.evidence += 9;
+      reasons.evidence.push("研究任务更需要明确论证边界与来源口径");
+    } else if (task.learnerRole === "early-career") {
+      scores.delivery += 9;
+      reasons.delivery.push("职场交付需要先对齐决策时间与最小可用范围");
+    } else {
+      scores.structure += 6;
+      reasons.structure.push("课程汇报更依赖听众能否快速跟上讲述顺序");
+    }
+
+    if (task.dailyMinutes <= 20) {
+      scores.delivery += 12;
+      reasons.delivery.push("每天可投入时间较短，需要主动压缩范围");
+    } else if (task.dailyMinutes >= 60) {
+      scores.evidence += 7;
+      reasons.evidence.push("当前时间允许先完成更充分的来源核对");
+    } else {
+      scores.structure += 4;
+      reasons.structure.push("当前时段适合先锁定骨架以减少返工");
+    }
+
+    feedbackTypes.forEach((type) => {
+      if (type === "too-slow") {
+        scores.delivery += 28;
+        scores.evidence -= 8;
+        reasons.delivery.push("上一轮反馈指出推进节奏太慢");
+      }
+      if (type === "too-dense") {
+        scores.structure += 28;
+        reasons.structure.push("上一轮反馈指出信息密度太高");
+      }
+      if (type === "not-enough-evidence") {
+        scores.evidence += 40;
+        reasons.evidence.push("上一轮反馈指出关键判断证据不足");
+      }
+    });
+
+    return ROUTES
+      .map((route) => ({
+        ...route,
+        fit: Math.max(0, Math.min(99, scores[route.id])),
+        reason: reasons[route.id][0] || "可以作为可回退的备选路线",
+      }))
+      .sort((left, right) => right.fit - left.fit || left.id.localeCompare(right.id))
+      .map((candidate, index) => Object.freeze({
+        ...candidate,
+        rank: index + 1,
+        recommended: index === 0,
+      }));
+  }
+
+  function createHandoffMarkdown(input, plan, completed, selectedRouteId, feedback = []) {
+    const task = normalizeInput(input);
+    const candidates = createCandidates(task, feedback);
+    const selected = candidates.find((candidate) => candidate.id === selectedRouteId);
+    if (!selected) throw new Error("请先确认一条推进路线");
+    const progress = Array.from({ length: 7 }, (_, index) => Boolean(completed?.[index]));
+    const feedbackTypes = normalizeFeedback(feedback);
+    const lines = [
+      `# ${task.taskName}｜任务交付单`,
+      "",
+      `- 用户阶段：${ROLE_LABELS[task.learnerRole]}`,
+      `- 当前重点：${PRIORITY_LABELS[task.priority]}`,
+      `- 每天投入：${task.dailyMinutes} 分钟`,
+      `- 截止日期：${task.deadline}`,
+      `- 交付形式：${task.deliverable}`,
+      `- 关键约束：${task.constraints}`,
+      "",
+      "## 已确认路线",
+      "",
+      `**${selected.label}**（当前匹配度 ${selected.fit}）`,
+      "",
+      `- 为什么：${selected.reason}`,
+      `- 价值：${selected.promise}`,
+      `- 取舍：${selected.tradeoff}`,
+      `- 立即行动：${selected.firstMove}`,
+      "",
+      "## 同尺候选",
+      "",
+    ];
+    candidates.forEach((candidate) => {
+      lines.push(`- ${candidate.rank}. ${candidate.label}｜匹配度 ${candidate.fit}｜${candidate.tradeoff}`);
+    });
+    if (feedbackTypes.length) {
+      lines.push("", "## 已进入下一轮的反馈", "");
+      feedbackTypes.forEach((type) => lines.push(`- ${FEEDBACK_LABELS[type]}`));
+    }
+    lines.push("", "## 七天行动", "");
+    plan.forEach((day, index) => {
+      lines.push(`- [${progress[index] ? "x" : " "}] 第 ${day.day} 天｜${day.date}｜${day.title}`);
+      lines.push(`  - ${day.action}`);
+      lines.push(`  - 产出：${day.output}`);
+    });
+    lines.push("", "> 这份交付单记录的是人工确认后的路线；事实、引用与最终格式仍需回到原始材料核验。", "");
+    return lines.join("\n");
+  }
+
   function createMarkdown(input, plan, completed = []) {
     const task = normalizeInput(input);
     if (!Array.isArray(plan) || plan.length !== 7) throw new Error("行动计划必须包含 7 天");
@@ -203,5 +352,12 @@
     return lines.join("\n");
   }
 
-  return Object.freeze({ createJourney, createMarkdown, createPlan, normalizeInput });
+  return Object.freeze({
+    createCandidates,
+    createHandoffMarkdown,
+    createJourney,
+    createMarkdown,
+    createPlan,
+    normalizeInput,
+  });
 });
