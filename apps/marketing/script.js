@@ -75,6 +75,34 @@
     title: $('strong', beat)?.textContent || '',
     copy: $('p', beat)?.textContent || '',
   }));
+  const candidateList = $('[data-candidate-list]');
+  const routeSelection = $('[data-route-selection]');
+  const confirmRouteButton = $('[data-confirm-route]');
+  const downloadHandoffButton = $('[data-download-handoff]');
+  const decisionRound = $('[data-decision-round]');
+  const feedbackForm = $('[data-feedback-form]');
+  const feedbackFieldset = $('[data-feedback-fieldset]');
+  const feedbackStatus = $('[data-feedback-status]');
+  const storyImage = $('[data-story-image]');
+  const storyCaption = $('[data-story-caption]');
+  const storyChapter = $('[data-story-chapter]');
+  const storyTitle = $('[data-story-title]');
+  const storyIndexLabel = $('[data-story-index]');
+  const storyProgress = $('[data-story-progress]');
+  const heroStoryImage = $('[data-hero-story-image]');
+  const heroStoryKicker = $('[data-hero-story-kicker]');
+  const heroStoryCaption = $('[data-hero-story-caption]');
+  const storyChapterTitles = {
+    起点: '一项真实任务从冲突开始',
+    定向: '你的属性会改变推进方式',
+    取证: '先看清材料，再开始生成',
+    比较: '每条路线都有明确代价',
+    抉择: '推荐之后仍需人工确认',
+    成形: '让成果逐步变得可检查',
+    反馈: '让真实使用改变下一轮',
+    交付: '把成果、来源与过程一起带走',
+  };
+  let activeStoryIndex = 0;
   let taskState = null;
 
   const localToday = () => {
@@ -82,6 +110,25 @@
     return new Date(now.valueOf() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
   };
   if (deadlineInput) deadlineInput.min = localToday();
+
+  $('[data-story-previous]')?.addEventListener('click', () => {
+    const scenes = window.ZuochengStory?.scenes || [];
+    if (!scenes.length) return;
+    const next = (activeStoryIndex - 1 + scenes.length) % scenes.length;
+    renderStory(scenes[next].id);
+  });
+  $('[data-story-next]')?.addEventListener('click', () => {
+    const scenes = window.ZuochengStory?.scenes || [];
+    if (!scenes.length) return;
+    const next = (activeStoryIndex + 1) % scenes.length;
+    renderStory(scenes[next].id);
+  });
+  taskForm?.elements.namedItem('learnerRole')?.addEventListener('change', (event) => {
+    renderHeroStory(roleSceneId(event.currentTarget.value));
+  });
+  taskForm?.elements.namedItem('priority')?.addEventListener('change', (event) => {
+    renderStory(prioritySceneId(event.currentTarget.value));
+  });
 
   const getTaskInput = () => ({
     taskName: taskForm.elements.namedItem('taskName').value,
@@ -98,6 +145,161 @@
       const field = taskForm?.elements.namedItem(name);
       if (field) field.value = value;
     });
+  };
+
+  const sceneFor = (id) => window.ZuochengStory?.get(id);
+
+  const renderStory = (sceneId) => {
+    const scenes = window.ZuochengStory?.scenes || [];
+    const scene = sceneFor(sceneId);
+    if (!scene || !storyImage) return;
+    const index = scenes.findIndex((item) => item.id === scene.id);
+    activeStoryIndex = index < 0 ? 0 : index;
+    storyImage.src = scene.src;
+    storyImage.alt = scene.alt;
+    if (storyCaption) storyCaption.textContent = scene.caption;
+    if (storyChapter) storyChapter.textContent = scene.chapter;
+    if (storyTitle) storyTitle.textContent = storyChapterTitles[scene.chapter] || scene.caption;
+    if (storyIndexLabel) storyIndexLabel.textContent = String(scene.id).padStart(2, '0');
+    if (storyProgress) storyProgress.style.width = `${((activeStoryIndex + 1) / scenes.length) * 100}%`;
+  };
+
+  const renderHeroStory = (sceneId) => {
+    const scene = sceneFor(sceneId);
+    if (!scene || !heroStoryImage) return;
+    heroStoryImage.src = scene.src;
+    heroStoryImage.alt = scene.alt;
+    if (heroStoryKicker) heroStoryKicker.textContent = `真实任务 · ${scene.chapter}`;
+    if (heroStoryCaption) heroStoryCaption.textContent = scene.caption;
+  };
+
+  const roleSceneId = (role) => ({
+    undergraduate: 2,
+    postgraduate: 3,
+    'early-career': 4,
+  })[role] || 1;
+
+  const prioritySceneId = (priority) => ({
+    evidence: 5,
+    structure: 6,
+    delivery: 7,
+  })[priority] || 8;
+
+  const resetDecision = () => {
+    if (candidateList) {
+      candidateList.replaceChildren();
+      const empty = document.createElement('div');
+      empty.className = 'candidate-empty';
+      const title = document.createElement('b');
+      title.textContent = '先完成上方任务输入';
+      const copy = document.createElement('p');
+      copy.textContent = '系统会给出三条有明确价值和代价的候选路线。';
+      empty.append(title, copy);
+      candidateList.append(empty);
+    }
+    if (routeSelection) routeSelection.textContent = '尚未选择路线。';
+    if (confirmRouteButton) confirmRouteButton.disabled = true;
+    if (downloadHandoffButton) downloadHandoffButton.disabled = true;
+    if (feedbackFieldset) feedbackFieldset.disabled = true;
+    if (feedbackStatus) feedbackStatus.textContent = '确认路线后即可记录反馈。';
+    if (decisionRound) decisionRound.textContent = '第 1 轮';
+  };
+
+  const selectRoute = (routeId) => {
+    if (!taskState || !window.ZuochengPlanner) return;
+    const candidates = window.ZuochengPlanner.createCandidates(taskState.input, taskState.feedback);
+    const selected = candidates.find((candidate) => candidate.id === routeId);
+    if (!selected) return;
+    taskState.selectedRouteId = selected.id;
+    taskState.confirmed = false;
+    $$('[data-route-id]', candidateList || document).forEach((card) => {
+      card.classList.toggle('is-selected', card.dataset.routeId === selected.id);
+    });
+    if (routeSelection) routeSelection.textContent = `已选择“${selected.label}”，请确认后生成交付单。`;
+    if (confirmRouteButton) confirmRouteButton.disabled = false;
+    if (downloadHandoffButton) downloadHandoffButton.disabled = true;
+    if (feedbackFieldset) feedbackFieldset.disabled = true;
+    renderStory(selected.sceneIds[0]);
+    saveTaskState();
+  };
+
+  const createCandidateCard = (candidate) => {
+    const card = document.createElement('label');
+    card.className = 'candidate-card';
+    card.dataset.routeId = candidate.id;
+    if (taskState?.selectedRouteId === candidate.id) card.classList.add('is-selected');
+
+    const input = document.createElement('input');
+    input.type = 'radio';
+    input.name = 'routeCandidate';
+    input.value = candidate.id;
+    input.checked = taskState?.selectedRouteId === candidate.id;
+    input.setAttribute('aria-label', `选择${candidate.label}`);
+
+    const copy = document.createElement('span');
+    copy.className = 'candidate-card__copy';
+    const title = document.createElement('b');
+    title.textContent = `${candidate.rank}. ${candidate.label}`;
+    const promise = document.createElement('p');
+    promise.textContent = candidate.promise;
+    const tradeoff = document.createElement('p');
+    tradeoff.textContent = `代价：${candidate.tradeoff}`;
+    const reason = document.createElement('small');
+    reason.textContent = candidate.reason;
+    copy.append(title, promise, tradeoff, reason);
+
+    const score = document.createElement('span');
+    score.className = 'candidate-card__score';
+    score.textContent = `匹配 ${candidate.fit}`;
+    card.append(input, copy, score);
+
+    if (candidate.recommended) {
+      const badge = document.createElement('span');
+      badge.className = 'candidate-card__badge';
+      badge.textContent = '当前推荐';
+      card.append(badge);
+    }
+
+    input.addEventListener('change', () => selectRoute(candidate.id));
+    input.addEventListener('focus', () => renderStory(candidate.sceneIds[0]));
+    card.addEventListener('pointerenter', () => renderStory(candidate.sceneIds[0]));
+    return card;
+  };
+
+  const renderDecision = (message = '') => {
+    if (!taskState || !window.ZuochengPlanner || !candidateList) {
+      resetDecision();
+      return;
+    }
+    taskState.feedback = Array.isArray(taskState.feedback) ? taskState.feedback : [];
+    taskState.round = Number.isSafeInteger(taskState.round) && taskState.round > 0 ? taskState.round : 1;
+    taskState.selectedRouteId = typeof taskState.selectedRouteId === 'string' ? taskState.selectedRouteId : null;
+    taskState.confirmed = Boolean(taskState.confirmed && taskState.selectedRouteId);
+    const candidates = window.ZuochengPlanner.createCandidates(taskState.input, taskState.feedback);
+    candidateList.replaceChildren(...candidates.map(createCandidateCard));
+    if (decisionRound) decisionRound.textContent = `第 ${taskState.round} 轮`;
+    const selected = candidates.find((candidate) => candidate.id === taskState.selectedRouteId);
+    if (selected) {
+      if (routeSelection) {
+        routeSelection.textContent = taskState.confirmed
+          ? `已确认“${selected.label}”：${selected.firstMove}`
+          : `已选择“${selected.label}”，请确认后生成交付单。`;
+      }
+      renderStory(taskState.confirmed ? 18 : selected.sceneIds[0]);
+    } else {
+      taskState.confirmed = false;
+      taskState.selectedRouteId = null;
+      if (routeSelection) routeSelection.textContent = `当前推荐“${candidates[0].label}”，仍需由你选择并确认。`;
+      renderStory(taskState.feedback.length ? 23 : 17);
+    }
+    if (confirmRouteButton) confirmRouteButton.disabled = !selected || taskState.confirmed;
+    if (downloadHandoffButton) downloadHandoffButton.disabled = !taskState.confirmed;
+    if (feedbackFieldset) feedbackFieldset.disabled = !taskState.confirmed;
+    if (feedbackStatus) {
+      feedbackStatus.textContent = message || (taskState.confirmed
+        ? '已确认。演练后可把一项具体反馈送入下一轮。'
+        : '选择并确认路线后，才能生成本轮交付单。');
+    }
   };
 
   const saveTaskState = () => {
@@ -146,6 +348,9 @@
       beat.classList.remove('is-current', 'is-complete');
     });
     if (exportPlanButton) exportPlanButton.disabled = true;
+    resetDecision();
+    renderStory(1);
+    renderHeroStory(1);
   };
 
   const renderTaskState = (message) => {
@@ -171,6 +376,7 @@
     renderTaskJourney(taskState.input, taskState.completed);
     if (exportPlanButton) exportPlanButton.disabled = false;
     if (taskStatus && message) taskStatus.textContent = message;
+    renderHeroStory(prioritySceneId(taskState.input.priority));
   };
 
   taskForm?.addEventListener('submit', (event) => {
@@ -182,9 +388,18 @@
     try {
       const input = window.ZuochengPlanner.normalizeInput(getTaskInput());
       window.ZuochengPlanner.createPlan(input);
-      taskState = { input, completed: Array(7).fill(false) };
+      taskState = {
+        input,
+        completed: Array(7).fill(false),
+        selectedRouteId: null,
+        confirmed: false,
+        feedback: [],
+        round: 1,
+      };
       saveTaskState();
       renderTaskState('计划已生成。点击每天的任务可以记录完成状态。');
+      renderDecision('三条路线已按你的阶段、重点与时间重新排序。');
+      renderStory(prioritySceneId(input.priority));
       toast('7 天行动计划已生成');
     } catch (error) {
       taskStatus.textContent = error.message || '请检查任务信息后重试。';
@@ -196,6 +411,18 @@
     taskState.completed[index] = !taskState.completed[index];
     saveTaskState();
     renderTaskState(taskState.completed[index] ? `第 ${index + 1} 天已完成。` : `第 ${index + 1} 天已恢复为未完成。`);
+    const completedCount = taskState.completed.filter(Boolean).length;
+    const progressScenes = [
+      prioritySceneId(taskState.input.priority),
+      9,
+      10,
+      17,
+      taskState.confirmed ? 18 : 17,
+      19,
+      20,
+      24,
+    ];
+    renderStory(progressScenes[completedCount]);
   }));
 
   exportPlanButton?.addEventListener('click', () => {
@@ -215,6 +442,58 @@
     toast('Markdown 行动计划已下载');
   });
 
+  confirmRouteButton?.addEventListener('click', () => {
+    if (!taskState?.selectedRouteId) return;
+    taskState.confirmed = true;
+    saveTaskState();
+    renderDecision('路线已确认。任务交付单已可下载；演练后可继续反馈。');
+    renderStory(18);
+    toast('推进路线已确认');
+  });
+
+  downloadHandoffButton?.addEventListener('click', () => {
+    if (!taskState?.confirmed || !taskState.selectedRouteId || !window.ZuochengPlanner) return;
+    const plan = window.ZuochengPlanner.createPlan(taskState.input);
+    const markdown = window.ZuochengPlanner.createHandoffMarkdown(
+      taskState.input,
+      plan,
+      taskState.completed,
+      taskState.selectedRouteId,
+      taskState.feedback,
+    );
+    const blob = new Blob([`\ufeff${markdown}`], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    const safeName = taskState.input.taskName.replace(/[\\/:*?"<>|]/g, '-').slice(0, 50) || '做成任务';
+    link.href = url;
+    link.download = `${safeName}-任务交付单.md`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+    renderStory(19);
+    toast('任务交付单已下载');
+  });
+
+  feedbackForm?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    if (!taskState?.confirmed) return;
+    const feedbackType = new FormData(feedbackForm).get('feedbackType');
+    if (typeof feedbackType !== 'string' || !feedbackType) {
+      if (feedbackStatus) feedbackStatus.textContent = '请选择一项具体反馈。';
+      return;
+    }
+    taskState.feedback = [...(taskState.feedback || []), { type: feedbackType, round: taskState.round }];
+    taskState.round += 1;
+    taskState.selectedRouteId = null;
+    taskState.confirmed = false;
+    feedbackForm.reset();
+    saveTaskState();
+    renderDecision('反馈已进入下一轮：推荐、理由和匹配度都已重排，请重新选择。');
+    renderStory(23);
+    toast('下一轮路线已重排');
+  });
+
   $('[data-reset-task]')?.addEventListener('click', () => {
     taskState = null;
     try { localStorage.removeItem(TASK_STORAGE_KEY); } catch {}
@@ -231,9 +510,19 @@
     if (savedTask?.input && Array.isArray(savedTask.completed) && savedTask.completed.length === 7) {
       const input = window.ZuochengPlanner.normalizeInput(savedTask.input);
       window.ZuochengPlanner.createPlan(input);
-      taskState = { input, completed: savedTask.completed.map(Boolean) };
+      taskState = {
+        input,
+        completed: savedTask.completed.map(Boolean),
+        selectedRouteId: typeof savedTask.selectedRouteId === 'string' ? savedTask.selectedRouteId : null,
+        confirmed: Boolean(savedTask.confirmed),
+        feedback: Array.isArray(savedTask.feedback) ? savedTask.feedback : [],
+        round: Number.isSafeInteger(savedTask.round) && savedTask.round > 0 ? savedTask.round : 1,
+      };
       fillTaskInput(input);
       renderTaskState('已恢复上次的任务和完成状态。');
+      renderDecision('已恢复上次确认、反馈与候选排序。');
+    } else {
+      renderEmptyTask();
     }
   } catch {
     taskState = null;

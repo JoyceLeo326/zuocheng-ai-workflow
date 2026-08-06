@@ -11,6 +11,9 @@ const localFiles = [
   'styles.css',
   'script.js',
   'planner.js',
+  'story.js',
+  'assets/brand',
+  'assets/story',
   'assets/og-cover.jpg',
   'assets/og-cover.png',
   'assets/og-cover.svg',
@@ -22,7 +25,7 @@ await rm(outputRoot, { force: true, recursive: true });
 for (const relativePath of localFiles) {
   const destination = resolve(outputRoot, relativePath);
   await mkdir(dirname(destination), { recursive: true });
-  await cp(resolve(packageRoot, relativePath), destination);
+  await cp(resolve(packageRoot, relativePath), destination, { recursive: true });
 }
 
 stdout.write(
