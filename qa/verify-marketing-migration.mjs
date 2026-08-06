@@ -38,6 +38,7 @@ test('公开构建采用 allowlist，不泄露 ADR、审计、计划或需求台
     'index.html',
     'planner.js',
     'script.js',
+    'story.js',
     'styles.css',
   ];
   assert.deepEqual((await readdir(outputRoot)).sort(), expectedRootFiles);
