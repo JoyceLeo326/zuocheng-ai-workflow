@@ -1,4 +1,4 @@
-import { access, readFile } from 'node:fs/promises';
+import { access, readFile, readdir } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { stdout } from 'node:process';
 import { fileURLToPath, URL } from 'node:url';
@@ -38,6 +38,21 @@ const entrypoints = [
 
 function fail(message) {
   throw new Error(`Vercel bundle verification failed: ${message}`);
+}
+
+async function assertNoBlockedRuntimeHosts(directory) {
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const target = resolve(directory, entry.name);
+    if (entry.isDirectory()) {
+      await assertNoBlockedRuntimeHosts(target);
+      continue;
+    }
+    if (!/\.(?:css|html|js|mjs)$/iu.test(entry.name)) continue;
+    const source = await readFile(target, 'utf8');
+    if (/fonts\.googleapis\.com|gstatic\.com|unpkg\.com|cdn\.jsdelivr\.net|cdnjs\.cloudflare\.com/iu.test(source)) {
+      fail(`blocked remote runtime host found in ${target}`);
+    }
+  }
 }
 
 async function assertFile(file, label) {
@@ -128,6 +143,7 @@ if (vercelConfig.trailingSlash !== true) {
 for (const entrypoint of entrypoints) {
   await verifyEntrypoint(entrypoint);
 }
+await assertNoBlockedRuntimeHosts(outputRoot);
 
 stdout.write(
   'Vercel bundle verified: /, /app/, and /admin/ entrypoints and local assets are complete.\n',

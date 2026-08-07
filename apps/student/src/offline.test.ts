@@ -28,6 +28,19 @@ describe('offline application shell registration', () => {
     });
   });
 
+  it('keeps portable mirror workers inside the nested app directory', async () => {
+    const registration = { scope: 'https://example.test/mirrors/zuocheng/app/' };
+    const register = vi.fn().mockResolvedValue(registration);
+
+    await expect(
+      registerOfflineSupport({ register }, './'),
+    ).resolves.toBe(registration);
+    expect(register).toHaveBeenCalledWith('./sw.js', {
+      scope: './',
+      updateViaCache: 'none',
+    });
+  });
+
   it('does not block the application when service workers are unavailable or fail', async () => {
     await expect(registerOfflineSupport(null)).resolves.toBeNull();
     await expect(

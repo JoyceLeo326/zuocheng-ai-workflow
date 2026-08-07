@@ -20,9 +20,11 @@ export async function registerOfflineSupport(
     return null;
   }
   const scope =
-    baseUrl.startsWith('/') && baseUrl.endsWith('/')
-      ? baseUrl
-      : '/';
+    baseUrl === './' || baseUrl === '.'
+      ? './'
+      : baseUrl.startsWith('/') && baseUrl.endsWith('/')
+        ? baseUrl
+        : '/';
   try {
     return await serviceWorker.register(`${scope}sw.js`, {
       scope,
