@@ -2,6 +2,7 @@ import { cp, mkdir, rm } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { stdout } from 'node:process';
 import { fileURLToPath } from 'node:url';
+import { localizeTesseractRuntime } from './localize-tesseract-runtime.mjs';
 
 const repositoryRoot = resolve(
   dirname(fileURLToPath(import.meta.url)),
@@ -35,6 +36,11 @@ await cp(studentDist, resolve(outputRoot, 'app'), {
 });
 await cp(adminDist, resolve(outputRoot, 'admin'), {
   recursive: true,
+});
+await localizeTesseractRuntime(outputRoot, {
+  workerPath: '/app/ocr/worker.min.js',
+  corePath: '/app/ocr/core',
+  langPath: '/app/ocr/lang',
 });
 
 stdout.write(
