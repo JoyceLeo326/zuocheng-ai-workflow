@@ -120,9 +120,15 @@ export function localOcrAssetPaths(): {
   corePath: string;
   langPath: string;
 } {
-  const base = import.meta.env.BASE_URL.endsWith('/')
+  const configuredBase = import.meta.env.BASE_URL.endsWith('/')
     ? import.meta.env.BASE_URL
     : `${import.meta.env.BASE_URL}/`;
+  const base = configuredBase.startsWith('.')
+    ? new URL(
+        configuredBase,
+        globalThis.location?.href ?? 'http://localhost/',
+      ).pathname
+    : configuredBase;
   return {
     workerPath: `${base}ocr/worker.min.js`,
     corePath: `${base}ocr/core`,

@@ -28,6 +28,8 @@ export async function localizeTesseractRuntime(outputRoot, {
   workerPath,
   corePath,
   langPath,
+  workerRuntimeCorePath = corePath,
+  workerRuntimeLangPath = langPath,
 }) {
   const applicationRoot = resolve(outputRoot, 'app');
   const files = await filesBelow(applicationRoot);
@@ -48,8 +50,8 @@ export async function localizeTesseractRuntime(outputRoot, {
   }
 
   let workerSource = await readFile(workerFile, 'utf8');
-  workerSource = replaceExactlyOnce(workerSource, bundledLanguageFallback, JSON.stringify(langPath), 'Tesseract language data');
-  workerSource = replaceExactlyOnce(workerSource, bundledCoreFallback, JSON.stringify(corePath), 'Tesseract core');
+  workerSource = replaceExactlyOnce(workerSource, bundledLanguageFallback, JSON.stringify(workerRuntimeLangPath), 'Tesseract language data');
+  workerSource = replaceExactlyOnce(workerSource, bundledCoreFallback, JSON.stringify(workerRuntimeCorePath), 'Tesseract core');
   await writeFile(workerFile, workerSource, 'utf8');
 
   for (const file of files) {

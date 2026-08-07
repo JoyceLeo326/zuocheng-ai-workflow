@@ -36,6 +36,8 @@ await localizeTesseractRuntime(output, {
   workerPath: './ocr/worker.min.js',
   corePath: './ocr/core',
   langPath: './ocr/lang',
+  workerRuntimeCorePath: './core',
+  workerRuntimeLangPath: './lang',
 });
 
 const emittedFiles = [];
