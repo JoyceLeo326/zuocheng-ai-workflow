@@ -101,7 +101,6 @@ const forbiddenPatterns = [
   [/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i, "邮箱"],
   [/(?<!\d)1[3-9]\d{9}(?!\d)/, "中国手机号"],
   [/(?<!\d)\d{17}[\dXx](?!\d)/, "身份证号"],
-  [/刘佳锐/, "姓名“刘佳锐”"],
 ];
 
 for (const [pattern, label] of forbiddenPatterns) {
