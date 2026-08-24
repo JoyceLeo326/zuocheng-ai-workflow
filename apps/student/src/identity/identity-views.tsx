@@ -406,7 +406,7 @@ function BrandStory() {
     <aside className="auth-brand" aria-label="做成学生工作台">
       <div>
         <a className="brand-lockup" href="/" aria-label="做成首页">
-          <span aria-hidden="true">■</span>
+          <img className="brand-lockup__mark" src={`${import.meta.env.BASE_URL}brand/zuocheng-mark.svg`} alt="" />
           <b>做成</b>
           <small>STUDENT OS</small>
         </a>
@@ -750,7 +750,7 @@ export function IdentityLoadingState() {
     <div className="auth-layout auth-layout--loading" aria-busy="true">
       <aside className="auth-brand auth-brand--loading">
         <a className="brand-lockup" href="/" aria-label="做成首页">
-          <span aria-hidden="true">■</span>
+          <img className="brand-lockup__mark" src={`${import.meta.env.BASE_URL}brand/zuocheng-mark.svg`} alt="" />
           <b>做成</b>
           <small>STUDENT OS</small>
         </a>
@@ -884,7 +884,7 @@ export function SecurityCenter({
     <section className="security-center" aria-labelledby="security-title">
       <nav className="security-nav" aria-label="账号导航">
         <a className="brand-lockup" href="/" aria-label="做成首页">
-          <span aria-hidden="true">■</span>
+          <img className="brand-lockup__mark" src={`${import.meta.env.BASE_URL}brand/zuocheng-mark.svg`} alt="" />
           <b>做成</b>
           <small>STUDENT OS</small>
         </a>
@@ -1257,7 +1257,7 @@ export function SecurityCenter({
       </div>
 
       <footer className="security-footer">
-        <span>做成■ 身份控制中心</span>
+        <span>做成｜身份控制中心</span>
         <span>账号、设备与数据管理</span>
       </footer>
     </section>

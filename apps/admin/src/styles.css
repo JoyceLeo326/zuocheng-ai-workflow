@@ -115,13 +115,10 @@ button:disabled {
 }
 
 .brand-mark {
-  display: grid;
   width: 2.6rem;
   height: 2.6rem;
-  place-items: center;
-  color: #101010;
-  background: #c8ff3d;
-  font-size: 1.1rem;
+  border-radius: 0.5rem;
+  object-fit: cover;
 }
 
 .brand div {

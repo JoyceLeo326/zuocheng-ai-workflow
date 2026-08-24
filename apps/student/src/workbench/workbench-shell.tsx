@@ -761,6 +761,15 @@ const stageHeaders: readonly StageHeader[] = [
   },
 ] as const;
 
+const stageResults = [
+  '一张能复述交付要求的任务卡',
+  '带页码与原文位置的材料库',
+  '逐条确认过用途的证据卡',
+  '结论、证据与顺序对齐的大纲',
+  '已经过规则检查的候选终稿',
+  '主文件、来源索引与核验记录',
+] as const;
+
 function formatFileSize(bytes: number) {
   if (bytes < 1_024) {
     return `${String(bytes)} B`;
@@ -1456,7 +1465,7 @@ export function WorkbenchShell({
     <main className="workbench-shell" id="main-content">
       <header className="workbench-topbar">
         <a className="brand-lockup" href="/" aria-label="做成首页">
-          <span aria-hidden="true">■</span>
+          <img className="brand-lockup__mark" src={`${import.meta.env.BASE_URL}brand/zuocheng-mark.svg`} alt="" />
           <b>做成</b>
           <small>STUDENT WORKBENCH</small>
         </a>
@@ -1863,6 +1872,22 @@ export function WorkbenchShell({
           </div>
         </div>
       </header>
+
+      <section className="workbench-outcome-bar" aria-label="当前交付路线">
+        <div className="workbench-outcome-bar__step">
+          <span>当前 · {String(activeStage + 1).padStart(2, '0')} / 06</span>
+          <strong>{activeHeader.title}</strong>
+        </div>
+        <div className="workbench-outcome-bar__result">
+          <span>本步带走</span>
+          <strong>{stageResults[activeStage]}</strong>
+        </div>
+        <div className="workbench-outcome-bar__next">
+          <span>{activeStage < 5 ? '接下来' : '完成后'}</span>
+          <strong>{activeStage < 5 ? stageHeaders[activeStage + 1]?.title : '带着完整交付包离开'}</strong>
+        </div>
+        <div className="workbench-outcome-bar__progress" aria-hidden="true"><i style={{ width: `${String(((activeStage + 1) / workflowStages.length) * 100)}%` }} /></div>
+      </section>
 
       <div className="workbench-layout">
         <aside className="workflow-rail">

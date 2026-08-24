@@ -1,14 +1,13 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 160" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 160" role="img" aria-labelledby="title desc" data-brand-system="path-to-done-v2">
   <title id="title">做成品牌组合标志</title>
-  <desc id="desc">做成品牌图形、中文名称与英文描述</desc>
-  <rect width="520" height="160" rx="28" fill="#F4F0E6"/>
+  <desc id="desc">做成图形标志、中文名称和从任务到成品的品牌主张</desc>
+  <rect width="560" height="160" rx="28" fill="#F4F0E6"/>
   <g transform="translate(16 16) scale(.8)">
-    <rect width="160" height="160" rx="32" fill="#171717"/>
-    <path d="M30 35h30v30H30zM65 65h30v30H65zM100 95h30v30h-30z" fill="none" stroke="#F4F0E6" stroke-width="6"/>
-    <path d="M58 63l9 9M93 93l9 9" stroke="#3157F6" stroke-width="6" stroke-linecap="square"/>
-    <rect x="106" y="101" width="18" height="18" fill="#D7FF4F"/>
+    <rect width="160" height="160" rx="26" fill="#171717"/>
+    <path d="M30 42h42M30 73h60M30 104h78" fill="none" stroke="#F4F0E6" stroke-width="10"/>
+    <path d="M72 42h48v50" fill="none" stroke="#3157F6" stroke-width="10"/>
+    <rect x="101" y="87" width="35" height="35" fill="#D7FF4F"/>
   </g>
-  <text x="170" y="84" fill="#171717" font-family="Microsoft YaHei, PingFang SC, Arial Black, sans-serif" font-size="54" font-weight="900" letter-spacing="-4">做成</text>
-  <rect x="291" y="45" width="28" height="28" fill="#D7FF4F" stroke="#171717" stroke-width="3"/>
-  <text x="172" y="118" fill="#6E6A61" font-family="Arial, Microsoft YaHei, sans-serif" font-size="17" font-weight="700" letter-spacing="2">FROM SOURCE TO DELIVERY</text>
+  <text x="170" y="83" fill="#171717" font-family="Microsoft YaHei, PingFang SC, Arial Black, sans-serif" font-size="56" font-weight="900" letter-spacing="-3">做成</text>
+  <text x="172" y="119" fill="#3157F6" font-family="Arial, Microsoft YaHei, sans-serif" font-size="18" font-weight="800" letter-spacing="2">FROM TASK TO DONE</text>
 </svg>

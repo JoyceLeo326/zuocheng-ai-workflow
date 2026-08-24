@@ -1,8 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" role="img" aria-labelledby="title desc" data-brand-system="path-to-done-v2">
   <title id="title">做成品牌标志</title>
-  <desc id="desc">三个逐步收束的轮廓方块连接到一个荧光绿色实心方块</desc>
-  <rect width="160" height="160" rx="32" fill="#171717"/>
-  <path d="M30 35h30v30H30zM65 65h30v30H65zM100 95h30v30h-30z" fill="none" stroke="#F4F0E6" stroke-width="6"/>
-  <path d="M58 63l9 9M93 93l9 9" stroke="#3157F6" stroke-width="6" stroke-linecap="square"/>
-  <rect x="106" y="101" width="18" height="18" fill="#D7FF4F"/>
+  <desc id="desc">三条材料线沿蓝色路径收束到荧光绿色的完成方块</desc>
+  <rect width="160" height="160" rx="26" fill="#171717"/>
+  <path d="M30 42h42M30 73h60M30 104h78" fill="none" stroke="#F4F0E6" stroke-width="10" stroke-linecap="square"/>
+  <path d="M72 42h48v50" fill="none" stroke="#3157F6" stroke-width="10" stroke-linecap="square"/>
+  <rect x="101" y="87" width="35" height="35" fill="#D7FF4F"/>
 </svg>

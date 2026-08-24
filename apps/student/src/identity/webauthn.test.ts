@@ -10,7 +10,7 @@ describe('WebAuthn browser boundary', () => {
   it('decodes base64url challenges and credential IDs into ArrayBuffers', () => {
     const creation = decodeCreationOptions({
       challenge: 'AQID',
-      rp: { id: 'zuocheng.example', name: '做成■' },
+      rp: { id: 'zuocheng.example', name: '做成' },
       user: {
         id: 'BAUG',
         name: 'student@example.test',
