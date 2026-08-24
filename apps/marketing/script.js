@@ -109,7 +109,50 @@
     const now = new Date();
     return new Date(now.valueOf() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
   };
+  const taskTemplates = {
+    presentation: {
+      learnerRole: 'undergraduate', priority: 'structure', dailyMinutes: '35',
+      taskName: '课程主题汇报', deliverable: '8 页汇报 + 5 分钟讲稿',
+      constraints: '只使用能够回到原文核验的资料；结论与来源一一对应', days: 7,
+    },
+    research: {
+      learnerRole: 'postgraduate', priority: 'evidence', dailyMinutes: '60',
+      taskName: '专题调研报告', deliverable: '调研报告 + 来源索引',
+      constraints: '关键数据保留口径与出处；同时记录相反证据和适用范围', days: 10,
+    },
+    defense: {
+      learnerRole: 'undergraduate', priority: 'delivery', dailyMinutes: '35',
+      taskName: '项目答辩准备', deliverable: '答辩页面 + 讲稿 + 问答清单',
+      constraints: '演讲不超过 5 分钟；每个关键判断都能回到原始材料', days: 6,
+    },
+  };
+  const dateAfter = (days) => {
+    const date = new Date();
+    date.setDate(date.getDate() + days);
+    return new Date(date.valueOf() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  };
+  const applyTaskTemplate = (templateId) => {
+    const template = taskTemplates[templateId];
+    if (!taskForm || !template) return;
+    const values = { ...template, deadline: dateAfter(template.days) };
+    delete values.days;
+    Object.entries(values).forEach(([name, value]) => {
+      const field = taskForm.elements.namedItem(name);
+      if (!field) return;
+      field.value = value;
+      field.dispatchEvent(new Event('input', { bubbles: true }));
+      field.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    $$('[data-task-template]').forEach((button) => button.classList.toggle('is-selected', button.dataset.taskTemplate === templateId));
+    if (taskStatus) taskStatus.textContent = '任务骨架已填好。改成你的真实要求，再生成计划。';
+    taskForm.elements.namedItem('taskName')?.focus();
+    renderHeroStory(roleSceneId(template.learnerRole));
+  };
   if (deadlineInput) deadlineInput.min = localToday();
+
+  $$('[data-task-template]').forEach((button) => {
+    button.addEventListener('click', () => applyTaskTemplate(button.dataset.taskTemplate));
+  });
 
   $('[data-story-previous]')?.addEventListener('click', () => {
     const scenes = window.ZuochengStory?.scenes || [];
@@ -498,6 +541,7 @@
     taskState = null;
     try { localStorage.removeItem(TASK_STORAGE_KEY); } catch {}
     taskForm?.reset();
+    $$('[data-task-template]').forEach((button) => button.classList.remove('is-selected'));
     if (deadlineInput) deadlineInput.min = localToday();
     renderEmptyTask();
     if (taskStatus) taskStatus.textContent = '当前任务已重置。';

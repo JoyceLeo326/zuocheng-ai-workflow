@@ -282,9 +282,7 @@ export function AdminWorkspace(props: AdminWorkspaceProps) {
       </a>
       <aside className={menuOpen ? 'sidebar sidebar--open' : 'sidebar'}>
         <div className="brand">
-          <span className="brand-mark" aria-hidden="true">
-            ■
-          </span>
+          <img className="brand-mark" src={`${import.meta.env.BASE_URL}brand/zuocheng-mark.svg`} alt="" />
           <div>
             <strong>做成</strong>
             <span>运营控制台</span>

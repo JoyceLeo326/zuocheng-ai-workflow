@@ -196,11 +196,11 @@ svg {
   text-decoration: none;
 }
 
-.brand-lockup > span {
+.brand-lockup__mark {
   grid-row: span 2;
-  color: var(--signal);
-  font-size: 1.75rem;
-  line-height: 1;
+  width: 2.35rem;
+  height: 2.35rem;
+  border-radius: 0.48rem;
 }
 
 .brand-lockup b {
@@ -1817,6 +1817,50 @@ mark.status-pill {
   display: block;
 }
 
+.workbench-outcome-bar {
+  position: relative;
+  display: grid;
+  width: min(100%, 96rem);
+  grid-template-columns: 0.86fr 1.18fr 1.18fr;
+  gap: 1px;
+  margin: 0 auto 1rem;
+  border: 1px solid var(--line);
+  background: var(--line);
+  overflow: hidden;
+}
+
+.workbench-outcome-bar > div:not(.workbench-outcome-bar__progress) {
+  min-height: 5.2rem;
+  padding: 1rem 1.15rem;
+  background: #111210;
+}
+
+.workbench-outcome-bar span,
+.workbench-outcome-bar strong {
+  display: block;
+}
+
+.workbench-outcome-bar span {
+  color: var(--signal);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 0.56rem;
+  font-weight: 900;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.workbench-outcome-bar strong {
+  margin-top: 0.52rem;
+  color: var(--paper);
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
+.workbench-outcome-bar__result { background: #171b11 !important; }
+.workbench-outcome-bar__next strong { color: var(--paper-faint); }
+.workbench-outcome-bar__progress { position: absolute; right: 0; bottom: 0; left: 0; height: 0.22rem; background: #292b26; }
+.workbench-outcome-bar__progress i { display: block; height: 100%; background: linear-gradient(90deg, var(--blue), var(--signal)); transition: width 240ms ease; }
+
 .workbench-project-status strong {
   font-size: 0.72rem;
 }
@@ -2382,6 +2426,8 @@ mark.status-pill {
 }
 
 @media (max-width: 900px) {
+  .workbench-outcome-bar { grid-template-columns: 1fr 1fr; }
+  .workbench-outcome-bar__next { grid-column: 1 / -1; }
   .identity-shell {
     padding: 0.75rem;
   }
@@ -2507,6 +2553,9 @@ mark.status-pill {
 }
 
 @media (max-width: 650px) {
+  .workbench-outcome-bar { grid-template-columns: 1fr; }
+  .workbench-outcome-bar__next { grid-column: auto; }
+  .workbench-outcome-bar > div:not(.workbench-outcome-bar__progress) { min-height: 4.5rem; padding: 0.85rem 1rem; }
   h1 {
     font-size: 3.15rem;
   }

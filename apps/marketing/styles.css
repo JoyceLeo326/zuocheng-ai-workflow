@@ -153,7 +153,8 @@ img { max-width: 100%; }
 .hero h1 {
   margin: 23px 0 26px;
   font-family: var(--display);
-  font-size: clamp(54px, 6.5vw, 92px);
+  max-width: 720px;
+  font-size: clamp(52px, 5.7vw, 82px);
   font-weight: 950;
   letter-spacing: -.085em;
   line-height: .96;
@@ -169,6 +170,12 @@ img { max-width: 100%; }
 .button-secondary:hover { background: var(--green); }
 .capability-line { display: flex; flex-wrap: wrap; gap: 8px 20px; margin: 26px 0 0; padding: 0; color: var(--muted); list-style: none; font-size: 11px; font-weight: 700; }
 .capability-line li::before { content: "■"; margin-right: 7px; color: var(--blue); font-size: 8px; }
+.outcome-route { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 24px 0 0; padding: 0; border: 1px solid var(--ink); background: var(--ink); gap: 1px; list-style: none; }
+.outcome-route li { min-height: 86px; padding: 13px 14px; background: rgba(244,240,230,.96); }
+.outcome-route span, .outcome-route strong, .outcome-route small { display: block; }
+.outcome-route span { color: var(--blue); font-family: var(--mono); font-size: 8px; font-weight: 900; }
+.outcome-route strong { margin-top: 8px; font-size: 12px; }
+.outcome-route small { margin-top: 3px; color: var(--muted); font-size: 9px; }
 
 .hero-product { position: relative; display: grid; min-height: 650px; align-items: end; }
 .hero-story-card {
@@ -249,6 +256,12 @@ img { max-width: 100%; }
 .task-form { padding: 26px; border-right: 1px solid var(--ink); background: var(--blue); color: white; }
 .form-title { display: flex; justify-content: space-between; padding-bottom: 18px; border-bottom: 1px solid rgba(255,255,255,.32); font-size: 11px; font-weight: 850; }
 .form-title b { color: var(--green); }
+.task-template-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; margin: 14px 0 3px; }
+.task-template-row button { min-height: 70px; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 4px; padding: 9px 10px; border: 1px solid rgba(255,255,255,.44); background: rgba(255,255,255,.08); color: #fff; text-align: left; cursor: pointer; }
+.task-template-row button:hover, .task-template-row button.is-selected { border-color: var(--green); background: var(--green); color: var(--ink); }
+.task-template-row span, .task-template-row small { display: block; }
+.task-template-row span { font-size: 11px; font-weight: 900; }
+.task-template-row small { color: inherit; font-size: 8px; line-height: 1.35; opacity: .78; }
 .task-form label { display: block; margin-top: 16px; }
 .task-form label > span { display: block; margin-bottom: 6px; font-size: 12px; font-weight: 800; }
 .field-row { display: grid; grid-template-columns: .8fr 1.2fr; gap: 10px; }
@@ -589,6 +602,8 @@ img { max-width: 100%; }
   .launchpad-grid { box-shadow: var(--shadow); }
   .task-form, .task-plan-panel { padding: 20px; }
   .field-row, .profile-grid { grid-template-columns: 1fr; }
+  .task-template-row { grid-template-columns: 1fr; }
+  .task-template-row button { min-height: 58px; }
   .task-plan > button > span { grid-template-columns: 58px 1fr; }
   .task-plan i { grid-column: 1 / -1; }
   .task-plan em { grid-column: 1 / -1; }
@@ -643,6 +658,8 @@ img { max-width: 100%; }
 
 @media (max-width: 420px) {
   .hero h1 { font-size: 45px; }
+  .outcome-route { grid-template-columns: 1fr; }
+  .outcome-route li { min-height: 66px; }
   .window-body { grid-template-columns: 76px 1fr; }
   .mini-stages li b { display: none; }
   .mini-stages li { grid-template-columns: 1fr; }

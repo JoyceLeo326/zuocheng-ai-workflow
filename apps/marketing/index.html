@@ -4,22 +4,22 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#f4f0e6">
-  <meta name="description" content="做成■，面向大学生真实任务的 AI 学习工作流。把资料、证据、结构和表达连接成一份可核验的交付。">
+  <meta name="description" content="做成，面向课程汇报、调研与答辩的任务工作台。把资料、证据、结构和表达收束成一份可核验的交付。">
   <meta property="og:type" content="website">
   <meta property="og:locale" content="zh_CN">
-  <meta property="og:site_name" content="做成■">
-  <meta property="og:title" content="做成■｜把零散资料做成可信交付">
+  <meta property="og:site_name" content="做成">
+  <meta property="og:title" content="做成｜从任务到成品">
   <meta property="og:description" content="从真实任务开始，完成取证、写作、核验与导出。">
   <meta property="og:url" content="https://zuocheng-ai-workflow.vercel.app/">
   <meta property="og:image" content="https://zuocheng-ai-workflow.vercel.app/assets/og-cover.jpg">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="做成■｜把零散资料做成可信交付">
+  <meta name="twitter:title" content="做成｜从任务到成品">
   <meta name="twitter:description" content="面向大学生真实任务的 AI 学习工作流。">
   <meta name="twitter:image" content="https://zuocheng-ai-workflow.vercel.app/assets/og-cover.jpg">
-  <title>做成■｜把零散资料做成可信交付</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%23171717'/%3E%3Crect x='20' y='20' width='24' height='24' fill='%23D7FF4F'/%3E%3C/svg%3E">
+  <title>做成｜从任务到成品</title>
+  <link rel="icon" href="assets/brand/zuocheng-favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -60,8 +60,8 @@
     <section class="hero" id="top">
       <div class="hero-copy reveal">
         <p class="eyebrow"><span></span> 面向课程汇报、调研与答辩</p>
-        <h1>把零散资料，<br>做成<span>经得起追问</span><br>的交付。</h1>
-        <p class="hero-lead">上传资料，圈定证据，组织结构，完成初稿，再逐项核验。做成把一项模糊任务变成可以讲、可以查、可以提交的成果。</p>
+        <h1>把散落资料，<br>做成一份<span>能交的成果。</span></h1>
+        <p class="hero-lead">把任务说清楚，把原文留住，把结构搭起来，再逐项核验。最后带走的不只是文件，还有一条讲得明白、查得到出处的完成路径。</p>
         <div class="hero-actions">
           <a class="button button-primary" href="#task-launchpad">开始一项真实任务 <span aria-hidden="true">↓</span></a>
           <a class="button button-secondary" href="/app/">进入工作台 <span aria-hidden="true">↗</span></a>
@@ -71,6 +71,11 @@
           <li>证据回到原文</li>
           <li>导出完整交付</li>
         </ul>
+        <ol class="outcome-route" data-outcome-route aria-label="从任务到成品">
+          <li><span>01</span><strong>说清任务</strong><small>听众、期限、标准</small></li>
+          <li><span>02</span><strong>做出判断</strong><small>原文、取舍、结构</small></li>
+          <li><span>03</span><strong>带走成品</strong><small>文件、来源、核验</small></li>
+        </ol>
       </div>
 
       <div class="hero-product reveal" data-delay="100" aria-label="产品界面示例">
@@ -121,7 +126,12 @@
 
       <div class="launchpad-grid reveal" data-delay="80">
         <form class="task-form" data-task-form>
-          <div class="form-title"><span>任务输入</span><b>□ → ■</b></div>
+          <div class="form-title"><span>先选最接近的任务</span><b>从任务到成品</b></div>
+          <div class="task-template-row" aria-label="任务原型">
+            <button type="button" data-task-template="presentation"><span>课程汇报</span><small>5–12 页 + 讲稿</small></button>
+            <button type="button" data-task-template="research"><span>调研报告</span><small>结论 + 来源索引</small></button>
+            <button type="button" data-task-template="defense"><span>答辩准备</span><small>页面 + 问答清单</small></button>
+          </div>
           <div class="profile-grid" aria-label="你的任务节奏">
             <label>
               <span>当前阶段</span>
@@ -499,7 +509,7 @@
     <a class="brand brand-footer" href="#top"><img class="brand-mark" src="assets/brand/zuocheng-mark.svg" alt="" width="34" height="34"><span>做成</span><i></i></a>
     <p>让资料、证据与表达，连接成可信的交付。</p>
     <nav aria-label="页脚导航"><a href="#workflow">工作方式</a><a href="#courses">课程</a><a href="assets/做成-AI学习工作流.pdf" download>课程手册</a><a href="#faq">常见问题</a></nav>
-    <small>© <span data-year></span> 做成■</small>
+    <small>© <span data-year></span> 做成</small>
   </footer>
 
   <div class="toast" role="status" aria-live="polite" data-toast></div>
